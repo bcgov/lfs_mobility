@@ -1,0 +1,357 @@
+---
+title: "Simulated Occupational Mobility: Optimal vs. Naive"
+author: Richard Martin
+format:
+  revealjs:
+    smaller: true
+    slide-number: true
+    scrollable: false
+    theme: solarized
+    margin: 0
+bibliography: references.bib
+slide-number: true
+incremental: true
+widescreen: true
+self-contained: true
+execute:
+  warning: false
+  message: false
+  echo: false
+  error: false
+---
+
+```{r, include=FALSE}
+library(tidyverse)
+library(here)
+library(kableExtra)
+skills <- read_rds(here("out","skills.rds"))
+source_dest_plots<- read_rds(here("out","source_dest_plots.rds"))
+dirt <- read_rds(here("out","dirt.rds"))
+alluvium <- read_rds(here("out", "alluvium_plots.rds"))
+```
+
+## Introduction
+
+:::: {#tbl-ei noc="2021" tbl-cap="EI applications by NOC since January 2025"}
+::: {style="font-size: 0.5em"}
+| NOC 2021 (5 digit)                     | \# Clients |
+|----------------------------------------|------------|
+| Logging machinery operators            | 418        |
+| Silviculture and forestry workers      | 339        |
+| Chain saw and skidder operators        | 319        |
+| Forestry technologists and technicians | 223        |
+| Supervisors, logging and forestry      | 108        |
+:::
+::::
+
+::: noincremental
+-   If I asked you to find alternative occupations for these people, what would you do?
+-   My first thought was to look at empirical transitions out of these occupations.
+-   One *could* ask Statistics Canada to link censuses to see where former forestry workers end up, but:
+    1.  Sample size would be $\approx \left(\frac{1}{4}\right)^2$ of workers.
+    2.  Transition matrix for 5 digit NOCs has $512^2=262144$ cells: Suppression.
+    3.  NOC hierarchy changed: mapping assumptions necessary.
+    4.  2011 NHS was voluntary: sample selection bias.
+:::
+
+## Jumping off point:
+
+::: {.column width="60%"}
+```{r, out.width="100%"}
+knitr::include_graphics(here("images","base.jpg"))
+```
+:::
+
+::: {.column width="40%"}
+
+- Use repeated LFS occupational proportions for an age cohort.
+- e.g. Occupation proportions for those aged 15-24 in 201x and those aged 25-34 in 202x.
+- If the proportions change we know there has been mobility, we just don't know the specifics.
+
+- ### Assumptions:
+
+- Death/retirement for those 15-64 independent of occupation.
+- Ditto *net* migration.
+
+:::
+
+
+## Changes in Occupation Proportions
+
+```{r, fig.retina=2}
+print(source_dest_plots$plot[[1]])
+```
+
+------------------------------------------------------------------------
+
+## Changes in Occupation Proportions
+
+```{r, fig.retina=2}
+print(source_dest_plots$plot[[2]])
+```
+
+------------------------------------------------------------------------
+
+## Changes in Occupation Proportions
+
+```{r, fig.retina=2}
+print(source_dest_plots$plot[[3]])
+```
+
+------------------------------------------------------------------------
+
+## Changes in Occupation Proportions
+
+```{r, fig.retina=2}
+print(source_dest_plots$plot[[4]])
+```
+
+------------------------------------------------------------------------
+
+## Changes in Occupation Proportions
+
+-   Greatest shifts in the occupation distribution occur between the age brackets 15-24 and 25-34: for many individuals this is when the make the transition from "job" to "career", likely after attaining some post secondary education.
+-   Both the *number* of occupations with a change in proportion greater than .004, as well as the *scale* of the changes in proportion diminish for older age brackets.
+
+------------------------------------------------------------------------
+
+## Cost Minimizing Occupational Mobility
+
+-   To reiterate, we can not directly observe career changes, but we can infer they must occur based on shifts in cohort occupational proportions 10 years later.
+-   There is an infinite set of occupational changes that would be consistent with both the initial and subsequent proportions.
+-   Lets look at a physical example.
+
+------------------------------------------------------------------------
+
+## Earth mover's problem:
+
+-   Suppose goal is to end up with 4 evenly sized piles of dirt (2.5kg each).
+-   Initially, the piles are arranged in a unit square, and have masses 1kg, 2kg, 3kg, 4kg.
+-   Cost is defined to be $\sum mass \times distance$.
+
+```{r}
+knitr::include_graphics(here("images","just_dirt.svg"))
+```
+
+------------------------------------------------------------------------
+
+## Transport Plans {.columns}
+
+::: {.column width="50%"}
+```{r, out.width="100%"}
+knitr::include_graphics(here("images","just_dirt.svg"))
+```
+:::
+
+::: {.column width="50%"}
+### Naive Transport
+
+```{r}
+dirt$naive_cost|>
+  kable()|>
+  kable_styling(full_width = FALSE, font_size = 14)
+```
+
+### Optimal Transport
+
+```{r}
+dirt$opt_cost|>
+  kable()|>
+  kable_styling(full_width = FALSE, font_size = 14)
+```
+:::
+
+-  For what arrangement of the piles would naive and optimal transport coincide?
+
+------------------------------------------------------------------------
+
+![](images/tetrahedron_with_images.gif){width=60%}
+
+------------------------------------------------------------------------
+
+## How is this related to labour market?
+
+-   Rather than piles of dirt, consider `r nrow(skills[["onet_full"]])` "piles" of workers.
+-   Specifically, consider the NOC proportions of those 15-24 in 2011: this corresponds to the size of the original "piles".
+-   Likewise, the NOC proportions of those 25-34 in 2021 are the desired "piles".
+-   There is an infinite number of ways to move workers to attain the desired piles.
+-   We will consider the naive transport solution as *an* upper bound of transport costs.
+-   The optimal transport solution [@transport] is the lower bound.
+
+------------------------------------------------------------------------
+
+## Distance between occupations
+
+-   We use 161 occupational characteristics (Skills, Abilities, Knowledge, Work Activities) from ONET to measure the distance between occupations.
+-   Principal component analysis is used to reduce the dimensionality of the data.
+-   For our distance metric we calculate the Euclidean distance on the first 10 principal components.
+
+------------------------------------------------------------------------
+
+## Screeplot
+
+```{r, fig.retina=2}
+eig <- factoextra::get_eig(skills[["onet_pca"]]) |>
+head(n=10)
+eig$Dim <- seq_len(nrow(eig))
+
+ggplot(eig, aes(x = factor(Dim))) +
+geom_bar(aes(y = variance.percent), stat = "identity") +
+geom_line(aes(y = cumulative.variance.percent), size = 0.8, group = 1) +
+geom_point(aes(y = cumulative.variance.percent)) +
+scale_y_continuous(
+name = "Individual % variance",
+sec.axis = sec_axis(~ ., name = "Cumulative % variance")
+) +
+labs(title=paste("First 10 components capture", scales::percent(max(eig$cumulative.variance.percent)/100) ,"of the variability"), 
+     x = "Principal Component",
+     caption="Source: ONET skills, abilities, knowledge, work activities.") +
+theme_minimal()
+```
+
+------------------------------------------------------------------------
+
+## Distances Between Occupations {.columns}
+
+::: {.column width="80%"}
+```{r, cache=TRUE}
+p <- heatmaply::heatmaply(
+  skills[["skills_noc_dist"]],
+  plot_method="plotly", 
+  width=800, 
+  height=600,
+  showticklabels = c(FALSE, FALSE),
+  show_dendrogram = c(FALSE, FALSE)
+)
+
+p %>% plotly::layout(
+  annotations = list(
+    x = 0.5,
+    y = -0.15,        # push it below the plot
+    text = "Source:  ONET skills, abilities, knowledge, work activities.",
+    showarrow = FALSE,
+    xref = "paper",
+    yref = "paper",
+    xanchor = "center",
+    yanchor = "top"
+  ),
+  margin = list(b = 120)   # make room for caption
+)
+```
+:::
+
+::: {.column width="20%"}
+-   Diagonal is distance between an occupation and itself.
+-   Most distinct skill set in yellow: other performers.
+-   Clusters in darker squares along the diagonal.
+:::
+
+------------------------------------------------------------------------
+
+## Optimal: 15 to 24 years -\> 25 to 34 years
+
+<video width="800" controls>
+
+<source src="out/optimal/15-24 to 25-34.mp4" type="video/mp4">
+
+Your browser does not support the video tag. </video>
+
+------------------------------------------------------------------------
+
+## Naive: 15 to 24 years -\> 25 to 34 years
+
+<video width="800" controls>
+
+<source src="out/naive/15-24 to 25-34.mp4" type="video/mp4">
+
+Your browser does not support the video tag. </video>
+
+------------------------------------------------------------------------
+
+## Optimal: 25 to 34 years -\> 35 to 44 years
+
+<video width="800" controls>
+
+<source src="out/optimal/25-34 to 35-44.mp4" type="video/mp4">
+
+Your browser does not support the video tag. </video>
+
+
+------------------------------------------------------------------------
+
+## Optimal: 35 to 44 years -\> 45 to 54 years
+
+<video width="800" controls>
+
+<source src="out/optimal/35-44 to 45-54.mp4" type="video/mp4">
+
+Your browser does not support the video tag. </video>
+
+
+------------------------------------------------------------------------
+
+## Optimal: 45 to 54 years -\> 55 to 64 years
+
+<video width="800" controls>
+
+<source src="out/optimal/45-54 to 55-64.mp4" type="video/mp4">
+
+Your browser does not support the video tag. </video>
+
+------------------------------------------------------------------------
+
+## TEER Summaries
+
+-   The animations above made use of Multidimensional scaling (MDS) of the skill distances between occupations.
+-   Because distances are based on 10D data (the first 10 principal components), the 2D "locations" of the origin and destination occupations (where the bubbles start and end) should be taken with a grain of salt.
+-   If we aggregate the flows to the TEER level, we can visualize using (static) alluvial plots.
+
+------------------------------------------------------------------------
+
+## Optimal 15 to 24 years -\> 25 to 34 years
+
+```{r, fig.retina=2}
+alluvium$optimal_alluvium_plot[[1]]
+```
+
+------------------------------------------------------------------------
+
+## Naive 15 to 24 years -\> 25 to 34 years
+
+```{r, fig.retina=2}
+alluvium$naive_alluvium_plot[[1]]
+```
+
+------------------------------------------------------------------------
+
+## Optimal 25 to 34 years -\> 35 to 44 years
+
+```{r, fig.retina=2}
+alluvium$optimal_alluvium_plot[[2]]
+```
+
+------------------------------------------------------------------------
+
+## Optimal 35 to 44 years -\> 45 to 54 years
+
+```{r, fig.retina=2}
+alluvium$optimal_alluvium_plot[[3]]
+```
+
+------------------------------------------------------------------------
+
+## Optimal 45 to 54 years -\> 55 to 64 years
+
+```{r, fig.retina=2}
+alluvium$optimal_alluvium_plot[[4]]
+```
+
+------------------------------------------------------------------------
+
+
+
+
+## References
+
+::: references
+:::
