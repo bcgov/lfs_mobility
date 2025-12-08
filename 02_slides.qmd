@@ -111,7 +111,7 @@ print(source_dest_plots$plot[[4]])
 ## Changes in Occupation Proportions
 
 -   Greatest shifts in the occupation distribution occur between the age brackets 15-24 and 25-34: for many individuals this is when the make the transition from "job" to "career", likely after attaining some post secondary education.
--   Both the *number* of occupations with a change in proportion greater than .004, as well as the *scale* of the changes in proportion diminish for older age brackets.
+-   Both the *number* of occupations with a change in proportion greater than the obvious cutoff point of .004, as well as the *scale* of the changes in proportion diminish for older age brackets.
 
 ------------------------------------------------------------------------
 
