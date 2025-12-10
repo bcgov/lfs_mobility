@@ -15,7 +15,7 @@ age_to_num <- function(x) as.numeric(word(x, 1, sep = "-"))
 
 get_large_diffs <- function(tbbl, cut_off){
   tbbl|>
-    group_by(from_noc, to_noc)|>
+    group_by(noc_plus_title)|>
     summarize(from_prop=mean(from_prop),
               to_prop=mean(to_prop)
     )|>
@@ -27,11 +27,11 @@ source_dest_plot <- function(age, data, aggregated){
   ggplot()+
     geom_col(data=aggregated,
              mapping=aes(x=difference,
-                         y=fct_reorder(from_noc, difference, .desc = TRUE)),
+                         y=fct_reorder(noc_plus_title, difference, .desc = TRUE)),
              alpha=.5)+
     geom_point(data=data,
                mapping=aes(x=difference,
-                           y=fct_reorder(from_noc, difference, .fun=mean, .desc = TRUE),
+                           y=fct_reorder(noc_plus_title, difference, .fun=mean, .desc = TRUE),
                            colour=factor(from_year)))+
     labs(title=paste("Changes in occupational proportions greater than", cut_off),
          subtitle=paste("Transition from age bracket ", age, " to ", data$age_in_to_year[[1]]),
@@ -77,38 +77,14 @@ naive_transport <- function(from, to){
            to=as.integer(to))
 }
 
-
-make_segment_data <- function(transitions, coordinates){
-  transitions|>
-    left_join(coordinates, by = c("from" = "index")) %>%
-    rename(x_from = V1, y_from = V2) %>%
-    left_join(coordinates, by = c("to" = "index")) %>%
-    rename(x_to = V1, y_to = V2)
-}
-
-make_long <- function(tbbl){
-  tbbl <- tbbl|>
-    left_join(skills$index_to_noc, by=c("from"="index"))|>
-    select(-from)|>
-    rename(from=noc)|>
-    left_join(skills$index_to_noc, by=c("to"="index"))|>
-    select(-to)|>
-    rename(to=noc)
-  initial <- tbbl|>
-    select(from, to, mass, x=x_from, y=y_from)|>
-    mutate(time=0)
-  subsequent <- tbbl|>
-    select(from, to, mass, x=x_to, y=y_to)|>
-    mutate(time=10)
-  long_segments <- bind_rows(initial, subsequent)
-  top8 <- slice_max(long_segments[long_segments$from!=long_segments$to,], order_by = mass, n=16)
-  bottom <- anti_join(long_segments, top8)
-  list(top8=top8, bottom=bottom)
-}
-
-make_base_plot <- function(lst, cost, size_limits = NULL){
+make_base_plot <- function(lst, cost, max_size){
+  subtitle <- if(!is.na(cost)){
+    paste0("Total Cost = ",fmt_auto(cost))
+  }else{
+    NULL
+  }
   ggplot(mapping = aes(x = x, y = y, size = mass)) +
-    geom_point(data = lst$bottom, alpha = 0.05) +
+    geom_point(data = lst$bottom, alpha = 0.1) +
     geom_point(data = lst$top8,
                mapping = aes(fill = fct_reorder(paste0(from,"\n",to,"\n"), mass, .desc = TRUE)),
                shape = 21,
@@ -117,12 +93,12 @@ make_base_plot <- function(lst, cost, size_limits = NULL){
       palette = "Dark2",
       guide = guide_legend(override.aes = list(size = 6))
     ) +
-    scale_size_continuous(range = c(.5, 30), limits = size_limits, guide = "none") +
+    scale_size_continuous(range = c(.5, 30), limits = c(0, max_size), guide = "none") +
     coord_equal() +
     theme_minimal(base_size = 14) +
     labs(
       title = "Year: {round(frame_time,1)}",
-      subtitle = paste0("Total Cost = ",round(cost,2)),
+      subtitle = subtitle,
       fill = "Top 8 transfers",
       x = NULL,
       y = NULL
@@ -191,4 +167,84 @@ animate_wrapper <- function(plots, names, folder){
   )
 }
 
+wpp_wrapper <- function(coords, mass, var){
+  ids <- row.names(mass)
+  mass <- mass[[var]]
+  keep <- which(mass > 0)
+  w <- wpp(coords[keep, , drop=FALSE], mass[keep])
+  w$original_id <- ids[keep]
+  return(w)
+}
+
+unbalanced_wrapper <- function(from, to, ...) {
+  res <- transport::unbalanced(from, to, ...)
+  plan <- res$plan
+  from_ids <- from$original_id
+  to_ids   <- to$original_id
+  plan$from_id <- from_ids[plan$from]
+  plan$to_id   <- to_ids[plan$to]
+  plan <- plan[, c("from", "from_id", "to", "to_id", "mass")]
+  aextra <- data.frame(
+    from = seq_along(res$aextra),
+    from_id = from_ids,
+    extra_mass = res$aextra
+  )
+  bextra <- data.frame(
+    to = seq_along(res$bextra),
+    to_id = to_ids,
+    extra_mass = res$bextra
+  )
+  list(
+    plan   = plan,
+    aextra = aextra,
+    bextra = bextra,
+    cost   = res$dist
+  )
+}
+
+make_segment_data <- function(transitions, coordinates){
+  coordinates <- coordinates|>
+    rownames_to_column("noc_2021")
+  transitions$plan|>
+    left_join(coordinates, by = c("from_id" = "noc_2021")) %>%
+    rename(x_from = V1, y_from = V2) %>%
+    left_join(coordinates, by = c("to_id" = "noc_2021")) %>%
+    rename(x_to = V1, y_to = V2)|>
+    select(-from, -to)
+}
+
+make_long <- function(tbbl){
+  tbbl <- tbbl|>
+    left_join(skills[["nocs_we_want"]], by=c("from_id"="noc_2021"))|>
+    select(-from_id)|>
+    rename(from=noc_plus_title)|>
+    left_join(skills[["nocs_we_want"]], by=c("to_id"="noc_2021"))|>
+    select(-to_id)|>
+    rename(to=noc_plus_title)
+  initial <- tbbl|>
+    select(from, to, mass, x=x_from, y=y_from)|>
+    mutate(time=0)
+  subsequent <- tbbl|>
+    select(from, to, mass, x=x_to, y=y_to)|>
+    mutate(time=10)
+  long_segments <- bind_rows(initial, subsequent)
+  top8 <- slice_max(long_segments[long_segments$from!=long_segments$to,], order_by = mass, n=16)
+  bottom <- anti_join(long_segments, top8)
+  list(top8=top8, bottom=bottom)
+}
+fmt_auto <- function(x, digits = 1) {
+  sapply(x, function(val) {
+    abs_val <- abs(val)
+
+    if (abs_val >= 1e9) {
+      paste0(round(val / 1e9, digits), "B")
+    } else if (abs_val >= 1e6) {
+      paste0(round(val / 1e6, digits), "M")
+    } else if (abs_val >= 1e3) {
+      paste0(round(val / 1e3, digits), "K")
+    } else {
+      format(val, big.mark = ",", scientific = FALSE)
+    }
+  })
+}
 

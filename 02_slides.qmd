@@ -1,5 +1,5 @@
 ---
-title: "Simulated Occupational Mobility: Optimal vs. Naive"
+title: "Simulating Occupational Mobility with Optimal Transport Theory"
 author: Richard Martin
 format:
   revealjs:
@@ -54,27 +54,25 @@ alluvium <- read_rds(here("out", "alluvium_plots.rds"))
     4.  2011 NHS was voluntary: sample selection bias.
 :::
 
-## Jumping off point:
+## Optimal Transport Theory (OTT):
 
-::: {.column width="60%"}
+::: {.column width="50%"}
 ```{r, out.width="100%"}
 knitr::include_graphics(here("images","base.jpg"))
 ```
 :::
 
-::: {.column width="40%"}
+::: {.column width="50%"}
 
-- Use repeated LFS occupational proportions for an age cohort.
-- e.g. Occupation proportions for those aged 15-24 in 201x and those aged 25-34 in 202x.
-- If the proportions change we know there has been mobility, we just don't know the specifics.
-
-- ### Assumptions:
-
-- Death/retirement for those 15-64 independent of occupation.
-- Ditto *net* migration.
-
+- OTT allows us to simulate occupation changes.
+- Required inputs are initial mass, distance, and final mass.
+- Mass: either *counts* or *proportions* by occupation (from Labour Force Survey).
+- Distance: occupational differences in skills, abilities, knowledge and work activities (from ONET).
 :::
 
+- If we use proportions we must assume that death, retirement and net migration are independent of occupation.
+- Alternatively, if we use counts we can model these external flows, rather than assuming independence.
+- Proportions are easier, so lets start there.
 
 ## Changes in Occupation Proportions
 
@@ -111,14 +109,17 @@ print(source_dest_plots$plot[[4]])
 ## Changes in Occupation Proportions
 
 -   Greatest shifts in the occupation distribution occur between the age brackets 15-24 and 25-34: for many individuals this is when the make the transition from "job" to "career", likely after attaining some post secondary education.
--   Both the *number* of occupations with a change in proportion greater than the obvious cutoff point of .004, as well as the *scale* of the changes in proportion diminish for older age brackets.
+-   Both the *number* of occupations with a change in proportion greater than .004, as well as the *scale* of the changes in proportion diminish for older age brackets.
 
 ------------------------------------------------------------------------
 
 ## Cost Minimizing Occupational Mobility
 
--   To reiterate, we can not directly observe career changes, but we can infer they must occur based on shifts in cohort occupational proportions 10 years later.
+-   To reiterate, we can not directly observe career changes.
+-   If we assume that retirements, death, net migration are independent of occupation...
+-   Then we can infer the minimum career changes necessary based on shifts in cohort occupational proportions 10 years later.
 -   There is an infinite set of occupational changes that would be consistent with both the initial and subsequent proportions.
+-   We need some way of narrowing it down.
 -   Lets look at a physical example.
 
 ------------------------------------------------------------------------
@@ -175,8 +176,7 @@ dirt$opt_cost|>
 -   Specifically, consider the NOC proportions of those 15-24 in 2011: this corresponds to the size of the original "piles".
 -   Likewise, the NOC proportions of those 25-34 in 2021 are the desired "piles".
 -   There is an infinite number of ways to move workers to attain the desired piles.
--   We will consider the naive transport solution as *an* upper bound of transport costs.
--   The optimal transport solution [@transport] is the lower bound.
+-   The optimal transport solution [@transport] finds the transport plan that minimizes the cost of occupational change, subject to the constraints imposed by the source and target proportions.
 
 ------------------------------------------------------------------------
 
@@ -248,53 +248,85 @@ p %>% plotly::layout(
 
 ------------------------------------------------------------------------
 
-## Optimal: 15 to 24 years -\> 25 to 34 years
+## Proportions: 15 to 24 years -\> 25 to 34 years
 
 <video width="800" controls>
 
-<source src="out/optimal/15-24 to 25-34.mp4" type="video/mp4">
+<source src="out/props/15-24 to 25-34.mp4" type="video/mp4">
 
 Your browser does not support the video tag. </video>
 
 ------------------------------------------------------------------------
 
-## Naive: 15 to 24 years -\> 25 to 34 years
+## Proportions: 25 to 34 years -\> 35 to 44 years
 
 <video width="800" controls>
 
-<source src="out/naive/15-24 to 25-34.mp4" type="video/mp4">
-
-Your browser does not support the video tag. </video>
-
-------------------------------------------------------------------------
-
-## Optimal: 25 to 34 years -\> 35 to 44 years
-
-<video width="800" controls>
-
-<source src="out/optimal/25-34 to 35-44.mp4" type="video/mp4">
+<source src="out/props/25-34 to 35-44.mp4" type="video/mp4">
 
 Your browser does not support the video tag. </video>
 
 
 ------------------------------------------------------------------------
 
-## Optimal: 35 to 44 years -\> 45 to 54 years
+## Proportions: 35 to 44 years -\> 45 to 54 years
 
 <video width="800" controls>
 
-<source src="out/optimal/35-44 to 45-54.mp4" type="video/mp4">
+<source src="out/props/35-44 to 45-54.mp4" type="video/mp4">
 
 Your browser does not support the video tag. </video>
 
 
 ------------------------------------------------------------------------
 
-## Optimal: 45 to 54 years -\> 55 to 64 years
+## Proportions: 45 to 54 years -\> 55 to 64 years
 
 <video width="800" controls>
 
-<source src="out/optimal/45-54 to 55-64.mp4" type="video/mp4">
+<source src="out/props/45-54 to 55-64.mp4" type="video/mp4">
+
+Your browser does not support the video tag. </video>
+
+------------------------------------------------------------------------
+
+## Counts: 15 to 24 years -\> 25 to 34 years
+
+<video width="800" controls>
+
+<source src="out/counts/15-24 to 25-34.mp4" type="video/mp4">
+
+Your browser does not support the video tag. </video>
+
+------------------------------------------------------------------------
+
+## Counts: 25 to 34 years -\> 35 to 44 years
+
+<video width="800" controls>
+
+<source src="out/counts/25-34 to 35-44.mp4" type="video/mp4">
+
+Your browser does not support the video tag. </video>
+
+
+------------------------------------------------------------------------
+
+## Counts: 35 to 44 years -\> 45 to 54 years
+
+<video width="800" controls>
+
+<source src="out/counts/35-44 to 45-54.mp4" type="video/mp4">
+
+Your browser does not support the video tag. </video>
+
+
+------------------------------------------------------------------------
+
+## Counts: 45 to 54 years -\> 55 to 64 years
+
+<video width="800" controls>
+
+<source src="out/counts/45-54 to 55-64.mp4" type="video/mp4">
 
 Your browser does not support the video tag. </video>
 
@@ -304,52 +336,41 @@ Your browser does not support the video tag. </video>
 
 -   The animations above made use of Multidimensional scaling (MDS) of the skill distances between occupations.
 -   Because distances are based on 10D data (the first 10 principal components), the 2D "locations" of the origin and destination occupations (where the bubbles start and end) should be taken with a grain of salt.
--   If we aggregate the flows to the TEER level, we can visualize using (static) alluvial plots.
+-   If we aggregate proportion flows to the TEER level, we can visualize using (static) alluvial plots.
 
 ------------------------------------------------------------------------
 
-## Optimal 15 to 24 years -\> 25 to 34 years
+## Proportions: 15 to 24 years -\> 25 to 34 years
 
 ```{r, fig.retina=2}
-alluvium$optimal_alluvium_plot[[1]]
+#alluvium$prop_alluvium_plot[[1]]
 ```
 
 ------------------------------------------------------------------------
 
-## Naive 15 to 24 years -\> 25 to 34 years
+## Proportions: 25 to 34 years -\> 35 to 44 years
 
 ```{r, fig.retina=2}
-alluvium$naive_alluvium_plot[[1]]
+#alluvium$prop_alluvium_plot[[2]]
 ```
 
 ------------------------------------------------------------------------
 
-## Optimal 25 to 34 years -\> 35 to 44 years
+## Proportions: 35 to 44 years -\> 45 to 54 years
 
 ```{r, fig.retina=2}
-alluvium$optimal_alluvium_plot[[2]]
+#alluvium$prop_alluvium_plot[[3]]
 ```
 
 ------------------------------------------------------------------------
 
-## Optimal 35 to 44 years -\> 45 to 54 years
+## Proportions: 45 to 54 years -\> 55 to 64 years
 
 ```{r, fig.retina=2}
-alluvium$optimal_alluvium_plot[[3]]
+#alluvium$optimal_alluvium_plot[[4]]
 ```
 
 ------------------------------------------------------------------------
-
-## Optimal 45 to 54 years -\> 55 to 64 years
-
-```{r, fig.retina=2}
-alluvium$optimal_alluvium_plot[[4]]
-```
-
-------------------------------------------------------------------------
-
-
-
 
 ## References
 

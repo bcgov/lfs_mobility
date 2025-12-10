@@ -41,14 +41,9 @@ skills$mapping <- read_excel(here("data","mapping", "onet2019_soc2018_noc2016_no
 
 skills$nocs_we_want <- skills$mapping |>
   select(noc_2021, noc2021_title) |>
-  distinct()
-
-skills$index_to_noc <- skills$mapping |>
-  select(noc_2021, noc2021_title) |>
   distinct()|>
-  arrange(noc_2021) |> #fragile: depends on noc_2021 being fixed width
-  unite(noc, noc_2021, noc2021_title, sep=": ")|>
-  mutate(index = row_number())
+  mutate(noc_plus_title=paste(noc_2021, noc2021_title, sep=": "))|>
+  select(noc_2021, noc_plus_title)
 
 skills$onet_raw <- tibble(file=c("Skills.xlsx", "Abilities.xlsx", "Knowledge.xlsx", "Work Activities.xlsx"))%>%
   mutate(data=map(file, read_data))%>%
@@ -78,39 +73,39 @@ skills$missing_four <- anti_join(skills$nocs_we_want, skills$onet_raw|>select(no
   mutate(noc_four=str_sub(noc_2021, 1, 4),
          .after=noc_2021)|>
   inner_join(skills$four_digit)|>
-  select(-noc_four, -noc2021_title)
+  select(-noc_four, -noc_plus_title)
 
 skills$missing_two <- anti_join(skills$nocs_we_want, skills$onet_raw|>select(noc_2021))|>
   anti_join(skills$missing_four|>select(noc_2021))|>
   mutate(noc_two=str_sub(noc_2021, 1, 2),
          .after=noc_2021)|>
   inner_join(skills$two_digit)|>
-  select(-noc_two, -noc2021_title)
+  select(-noc_two, -noc_plus_title)
 
 skills$onet_full <- bind_rows(skills$onet_mapped, skills$missing_four, skills$missing_two)|>
   ungroup()|>
   arrange(noc_2021)|>
-  select(-noc_2021)
+  column_to_rownames("noc_2021")
 
 skills$onet_pca <- prcomp(skills$onet_full, center=TRUE, scale=TRUE)
 skills$noc_coords <- skills$onet_pca$x[, 1:10]#keep first 10 components
 skills$skills_noc_dist<- dist(skills$noc_coords, method = "euclidean")|>
   as.matrix()
+skills$max_dist <- dist(skills$noc_coords, method = "euclidean")|>
+  max()
 
 skills$mds2 <- cmdscale(skills$skills_noc_dist, k = 2)|>
-  as.data.frame()|>
-  rownames_to_column("index")|>
-  mutate(index=as.integer(index))
+  as.data.frame()
 
 #read in lfs data
 
 lfs$lfs_data <- vroom(here("data","lfs", list.files(here("data","lfs"))),
                       col_types = cols(
-                                    SYEAR = col_double(),
-                                    NOC_5 = col_character(),
-                                    AGE10 = col_character(),
-                                    `_COUNT_` = col_double()
-                                    ))|>
+                        SYEAR = col_double(),
+                        NOC_5 = col_character(),
+                        AGE10 = col_character(),
+                        `_COUNT_` = col_double()
+                      ))|>
   na.omit()|>
   clean_names()|>
   filter(age10!="nwa",
@@ -156,82 +151,90 @@ assert_that(all(age_to_num(results$source_dest_plots$age_in_to_year) -
 results$source_dest_plots <- results$source_dest_plots|>
   mutate(difference=to_prop-from_prop)|>
   left_join(skills$nocs_we_want, by=c("from_noc"="noc_2021"))|>
-  unite(from_noc, from_noc, noc2021_title, sep=": ")|>
   group_by(age_in_from_year)|>
   nest()|>
   mutate(large_diffs=map(data, get_large_diffs, cut_off),
-         data=map2(data, large_diffs, semi_join, by = join_by(from_noc, to_noc)),
+         data=map2(data, large_diffs, semi_join, by = join_by(noc_plus_title)),
          plot=pmap(list(age_in_from_year, data, large_diffs), source_dest_plot)
-         )
+  )
+
+write_rds(results$source_dest_plots, here("out","source_dest_plots.rds"))
 
 #aggregate across years-------------------
 
 results$from_sorted <- lfs$lfs_data|>
   filter(syear<2015,
-         age10!="55-64")|> #retired in end year
+         age10!="55-64")|> #retired 10 years later
   group_by(age10, noc_5)|>
-  summarize(count=sum(count))|>
+  summarize(count=mean(count))|>  # 4 year mean
   group_by(age10)|>
   mutate(prop=count/sum(count))|>
-  select(age_in_from_year=age10,
-         from_noc=noc_5,
-         from_prop=prop)|>
+  select(noc_5,
+         age_in_from_year=age10,
+         from_prop=prop,
+         from_count=count)|>
   group_by(age_in_from_year)|>
   nest()|>
   rename(from=data)|>
-  mutate(from=map(from, arrange_and_pull, from_noc, from_prop))
+  mutate(from=map(from, column_to_rownames, "noc_5"))
 
 results$to_sorted <- lfs$lfs_data|>
   filter(syear>2020,
          age10!="15-24")|> #babies in start year
   group_by(age10, noc_5)|>
-  summarize(count=sum(count))|>
+  summarize(count=mean(count))|> # 4 year mean
   group_by(age10)|>
   mutate(prop=count/sum(count))|>
   select(age_in_to_year=age10,
-         to_noc=noc_5,
-         to_prop=prop)|>
+         noc_5,
+         to_prop=prop,
+         to_count=count)|>
   group_by(age_in_to_year)|>
   nest()|>
   rename(to=data)|>
-  mutate(to=map(to, arrange_and_pull, to_noc, to_prop))
+  mutate(to=map(to, column_to_rownames, "noc_5"))
+
 
 results$tbbl <- bind_cols(results$from_sorted, results$to_sorted)|>
+  ungroup()|>
   mutate(movie_name=paste(age_in_from_year, age_in_to_year, sep=" to "),
-         distance=list(skills$skills_noc_dist),
-         coordinates=list(skills$mds2),
-         optimal=pmap(list(a=from,
-                              b=to,
-                              costm=distance),
-                         transport),
-         optimal_cost=map2_dbl(optimal, distance, get_cost),
-         optimal_teer=map(optimal, convert_to_teer),
-         optimal_alluvium_plot=pmap(list(optimal_teer, age_in_from_year, age_in_to_year, optimal_cost), alluvial_plot),
-         optimal_segments=map2(optimal, coordinates, make_segment_data),
-         optimal_long=map(optimal_segments, make_long),
-         optimal_base_plot=map2(optimal_long, optimal_cost, make_base_plot, size_limits = c(0, .04)),
-         naive=map2(from, to, naive_transport),
-         naive_cost=map2_dbl(naive, distance, get_cost),
-         naive_teer=map(naive, convert_to_teer),
-         naive_alluvium_plot=pmap(list(naive_teer, age_in_from_year, age_in_to_year, naive_cost), alluvial_plot),
-         naive_segments=map2(naive, coordinates, make_segment_data),
-         naive_long=map(naive_segments, make_long),
-         naive_base_plot=map2(naive_long, naive_cost, make_base_plot, size_limits = c(0, .04))
+         mds_coords=list(skills$mds2),
+         first_ten=list(skills$noc_coords),
+         source_props=map2(first_ten, from, wpp_wrapper, "from_prop"),
+         target_props=map2(first_ten, to, wpp_wrapper, "to_prop"),
+         props=map2(source_props, target_props, unbalanced_wrapper, p=1, C=skills$max_dist, output="all"), #default is distance^(p=2), big C no +/-
+         props_cost=map(props, "cost"),
+         max_prop=map(props, "plan"),
+         max_prop=map(max_prop, "mass"),
+         max_prop=map_dbl(max_prop, max),
+         max_prop=max(max_prop),
+         prop_segments=map2(props, mds_coords, make_segment_data),
+         prop_long=map(prop_segments, make_long),
+         prop_base_plot=pmap(list(prop_long, props_cost, max_prop),  make_base_plot),
+         source_counts=map2(first_ten, from, wpp_wrapper, "from_count"),
+         target_counts=map2(first_ten, to, wpp_wrapper, "to_count"),
+         counts=map2(source_counts, target_counts, unbalanced_wrapper, p=1, C=skills$max_dist/2, output="all"),
+         counts_cost=map(counts, "cost"), #set to NA_real_ to suppress in plots
+         max_count=map(counts, "plan"),
+         max_count=map(max_count, "mass"),
+         max_count=map_dbl(max_count, max),
+         max_count=max(max_count),
+         count_segments=map2(counts, mds_coords, make_segment_data),
+         count_long=map(count_segments, make_long),
+         count_base_plot=pmap(list(count_long, counts_cost, max_count), make_base_plot)
          )
 
-
-write_rds(skills, here("out","skills.rds"))
-write_rds(results$source_dest_plots, here("out","source_dest_plots.rds"))
-
-results$tbbl|>
-  ungroup()|>
-  select(movie_name, contains("alluvium"))|>
-  write_rds(here("out","alluvium_plots.rds"))
+animate_wrapper(results$tbbl$prop_base_plot, results$tbbl$movie_name, "props")
+animate_wrapper(results$tbbl$count_base_plot, results$tbbl$movie_name, "counts")
 
 
-#to make videos uncomment... takes long time
-#animate_wrapper(results$tbbl$optimal_base_plot, results$tbbl$movie_name, "optimal")
-#animate_wrapper(results$tbbl$naive_base_plot, results$tbbl$movie_name, "naive")
+
+
+
+
+
+
+
 
 
 
