@@ -111,20 +111,15 @@ make_base_plot <- function(lst, cost, max_size){
     ease_aes("linear")
 }
 
-convert_to_teer <- function(tbbl){
-  tbbl <- tbbl|>
-    left_join(skills$index_to_noc, by=c("from"="index"))|>
-    select(-from)|>
-    rename(from=noc)|>
-    left_join(skills$index_to_noc, by=c("to"="index"))|>
-    select(-to)|>
-    rename(to=noc)
-  tbbl|>
-    mutate(to=str_sub(to,2,2),
-           from=str_sub(from,2,2))|>
+convert_to_teer <- function(lst){
+  lst$plan|>
+    mutate(to=str_sub(to_id,2,2),
+           from=str_sub(from_id,2,2))|>
     group_by(to, from)|>
     summarize(mass=sum(mass))
 }
+
+
 alluvial_plot <- function(tbbl, initial_age, subsequent_age, cost){
   tbbl|>
     ggplot(aes(axis1 = from, axis2 = to, y = mass)) +
@@ -246,5 +241,12 @@ fmt_auto <- function(x, digits = 1) {
       format(val, big.mark = ",", scientific = FALSE)
     }
   })
+}
+
+max_mass <- function(x) {
+  purrr::map(x, "plan") |>
+    purrr::map("mass") |>
+    purrr::map_dbl(max) |>
+    max()
 }
 

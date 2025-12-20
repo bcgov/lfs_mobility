@@ -52,7 +52,7 @@ skills$onet_raw <- tibble(file=c("Skills.xlsx", "Abilities.xlsx", "Knowledge.xls
   pivot_wider(id_cols = o_net_soc_code, names_from = element_name, values_from = score)%>%
   inner_join(skills$mapping)%>%
   ungroup()%>%
-  select(-o_net_soc_code, noc2021_title)%>%
+  select(-o_net_soc_code, -noc2021_title)%>%
   select(noc_2021, everything())
 
 skills$onet_mapped <- skills$onet_raw|>
@@ -85,7 +85,9 @@ skills$missing_two <- anti_join(skills$nocs_we_want, skills$onet_raw|>select(noc
 skills$onet_full <- bind_rows(skills$onet_mapped, skills$missing_four, skills$missing_two)|>
   ungroup()|>
   arrange(noc_2021)|>
-  column_to_rownames("noc_2021")
+  inner_join(skills$nocs_we_want)|>
+  select(-noc_2021)|>
+  column_to_rownames("noc_plus_title")
 
 skills$onet_pca <- prcomp(skills$onet_full, center=TRUE, scale=TRUE)
 skills$noc_coords <- skills$onet_pca$x[, 1:10]#keep first 10 components
@@ -96,6 +98,8 @@ skills$max_dist <- dist(skills$noc_coords, method = "euclidean")|>
 
 skills$mds2 <- cmdscale(skills$skills_noc_dist, k = 2)|>
   as.data.frame()
+
+write_rds(skills, here("out", "skills.rds"))
 
 #read in lfs data
 
@@ -203,11 +207,10 @@ results$tbbl <- bind_cols(results$from_sorted, results$to_sorted)|>
          source_props=map2(first_ten, from, wpp_wrapper, "from_prop"),
          target_props=map2(first_ten, to, wpp_wrapper, "to_prop"),
          props=map2(source_props, target_props, unbalanced_wrapper, p=1, C=skills$max_dist, output="all"), #default is distance^(p=2), big C no +/-
+         props_teer=map(props, convert_to_teer),
          props_cost=map(props, "cost"),
-         max_prop=map(props, "plan"),
-         max_prop=map(max_prop, "mass"),
-         max_prop=map_dbl(max_prop, max),
-         max_prop=max(max_prop),
+         teer_alluvium_plot=pmap(list(props_teer, age_in_from_year, age_in_to_year, props_cost), alluvial_plot),
+         max_prop= max_mass(props),
          prop_segments=map2(props, mds_coords, make_segment_data),
          prop_long=map(prop_segments, make_long),
          prop_base_plot=pmap(list(prop_long, props_cost, max_prop),  make_base_plot),
@@ -215,17 +218,18 @@ results$tbbl <- bind_cols(results$from_sorted, results$to_sorted)|>
          target_counts=map2(first_ten, to, wpp_wrapper, "to_count"),
          counts=map2(source_counts, target_counts, unbalanced_wrapper, p=1, C=skills$max_dist/2, output="all"),
          counts_cost=map(counts, "cost"), #set to NA_real_ to suppress in plots
-         max_count=map(counts, "plan"),
-         max_count=map(max_count, "mass"),
-         max_count=map_dbl(max_count, max),
-         max_count=max(max_count),
+         max_count= max_mass(counts),
          count_segments=map2(counts, mds_coords, make_segment_data),
          count_long=map(count_segments, make_long),
          count_base_plot=pmap(list(count_long, counts_cost, max_count), make_base_plot)
          )
 
-animate_wrapper(results$tbbl$prop_base_plot, results$tbbl$movie_name, "props")
-animate_wrapper(results$tbbl$count_base_plot, results$tbbl$movie_name, "counts")
+results$tbbl|>
+  select(teer_alluvium_plot)|>
+  write_rds(here("out", "alluvium_plots.rds"))
+
+#animate_wrapper(results$tbbl$prop_base_plot, results$tbbl$movie_name, "props")
+#animate_wrapper(results$tbbl$count_base_plot, results$tbbl$movie_name, "counts")
 
 
 

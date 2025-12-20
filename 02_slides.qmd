@@ -27,7 +27,7 @@ library(kableExtra)
 skills <- read_rds(here("out","skills.rds"))
 source_dest_plots<- read_rds(here("out","source_dest_plots.rds"))
 dirt <- read_rds(here("out","dirt.rds"))
-alluvium <- read_rds(here("out", "alluvium_plots.rds"))
+alluvium_plots <- read_rds(here("out", "alluvium_plots.rds"))
 ```
 
 ## Introduction
@@ -50,8 +50,7 @@ alluvium <- read_rds(here("out", "alluvium_plots.rds"))
 -   One *could* ask Statistics Canada to link censuses to see where former forestry workers end up, but:
     1.  Sample size would be $\approx \left(\frac{1}{4}\right)^2$ of workers.
     2.  Transition matrix for 5 digit NOCs has $512^2=262144$ cells: Suppression.
-    3.  NOC hierarchy changed: mapping assumptions necessary.
-    4.  2011 NHS was voluntary: sample selection bias.
+    3.  Realistically we can only use a 5 year window between 2016 and 2021: perhaps not long enough to catch much mobility.
 :::
 
 ## Optimal Transport Theory (OTT):
@@ -63,16 +62,15 @@ knitr::include_graphics(here("images","base.jpg"))
 :::
 
 ::: {.column width="50%"}
-
-- OTT allows us to simulate occupation changes.
-- Required inputs are initial mass, distance, and final mass.
-- Mass: either *counts* or *proportions* by occupation (from Labour Force Survey).
-- Distance: occupational differences in skills, abilities, knowledge and work activities (from ONET).
+-   OTT allows us to simulate occupation changes.
+-   Required inputs are initial mass, distance, and final mass.
+-   Mass: either *counts* or *proportions* by occupation (from Labour Force Survey).
+-   Distance: occupational differences in skills, abilities, knowledge and work activities (from ONET).
 :::
 
-- If we use proportions we must assume that death, retirement and net migration are independent of occupation.
-- Alternatively, if we use counts we can model these external flows, rather than assuming independence.
-- Proportions are easier, so lets start there.
+-   If we use proportions we must assume that death, retirement and net migration are independent of occupation.
+-   Alternatively, if we use counts we can model these external flows, rather than assuming independence.
+-   Proportions are easier, so lets start there.
 
 ## Changes in Occupation Proportions
 
@@ -162,11 +160,11 @@ dirt$opt_cost|>
 ```
 :::
 
--  For what arrangement of the piles would naive and optimal transport coincide?
+-   For what arrangement of the piles would naive and optimal transport coincide?
 
 ------------------------------------------------------------------------
 
-![](images/tetrahedron_with_images.gif){width=60%}
+![](images/tetrahedron_with_images.gif){width="60%"}
 
 ------------------------------------------------------------------------
 
@@ -213,36 +211,43 @@ theme_minimal()
 
 ## Distances Between Occupations {.columns}
 
-::: {.column width="80%"}
-```{r, cache=TRUE}
-p <- heatmaply::heatmaply(
-  skills[["skills_noc_dist"]],
-  plot_method="plotly", 
-  width=800, 
-  height=600,
-  showticklabels = c(FALSE, FALSE),
-  show_dendrogram = c(FALSE, FALSE)
+::: {.column width="70%"}
+```{r, fig.width=6, fig.height=6}
+mat <- skills[["skills_noc_dist"]]
+hc  <- hclust(as.dist(mat), method = "average")
+ord <- hc$order
+mat_ord <- mat[ord, ord]
+xlab <- as.character(colnames(mat_ord))
+ylab <- as.character(rownames(mat_ord))
+
+p <- plotly::plot_ly(
+  x = xlab,
+  y = ylab,
+  z = mat_ord,  # ← THIS is the critical line
+  type = "heatmap"
 )
 
-p %>% plotly::layout(
-  annotations = list(
-    x = 0.5,
-    y = -0.15,        # push it below the plot
-    text = "Source:  ONET skills, abilities, knowledge, work activities.",
-    showarrow = FALSE,
-    xref = "paper",
-    yref = "paper",
-    xanchor = "center",
-    yanchor = "top"
+p |> plotly::layout(
+  width  = 600,
+  height = 500,
+  xaxis = list(
+    type = "category",
+    showticklabels = FALSE,
+    ticks = ""
   ),
-  margin = list(b = 120)   # make room for caption
+  yaxis = list(
+    type = "category",
+    showticklabels = FALSE,
+    ticks = ""
+  )
 )
+
 ```
 :::
 
-::: {.column width="20%"}
+::: {.column width="30%"}
 -   Diagonal is distance between an occupation and itself.
--   Most distinct skill set in yellow: other performers.
+-   Most distinct skill set in yellow: other performers: e.g. erotic dancer, face painter, influencer, magician, rodeo horse rider, Santa Claus, ventriloquist
 -   Clusters in darker squares along the diagonal.
 :::
 
@@ -266,7 +271,6 @@ Your browser does not support the video tag. </video>
 
 Your browser does not support the video tag. </video>
 
-
 ------------------------------------------------------------------------
 
 ## Proportions: 35 to 44 years -\> 45 to 54 years
@@ -276,7 +280,6 @@ Your browser does not support the video tag. </video>
 <source src="out/props/35-44 to 45-54.mp4" type="video/mp4">
 
 Your browser does not support the video tag. </video>
-
 
 ------------------------------------------------------------------------
 
@@ -290,15 +293,68 @@ Your browser does not support the video tag. </video>
 
 ------------------------------------------------------------------------
 
-## Counts: 15 to 24 years -\> 25 to 34 years
+## TEER Summaries
 
-<video width="800" controls>
+- 2nd digit of NOC code is the TEER level of occupation:
 
-<source src="out/counts/15-24 to 25-34.mp4" type="video/mp4">
+::: {.fragment}
+| TEER | Description | Typical education / training |
+|------|-------------|------------------------------|
+| 0 | Management  | Management experience |
+| 1 | Professional | University degree |
+| 2 | Technical / skilled trades | College diploma (2–3 years) or apprenticeship (2–5 years) |
+| 3 | Intermediate occupations | College diploma (<2 years) or apprenticeship (<2 years) |
+| 4 | Labour / support occupations | High school diploma and/or several weeks–months of training |
+| 5 | Entry-level | Short-term training; no formal education required |
+:::
 
-Your browser does not support the video tag. </video>
+-   If we aggregate proportion flows to the TEER level, we can visualize using (static) alluvial plots.
 
 ------------------------------------------------------------------------
+
+## Proportions: 15 to 24 years -\> 25 to 34 years
+
+```{r, fig.retina=2}
+alluvium_plots$teer_alluvium_plot[[1]]
+```
+
+------------------------------------------------------------------------
+
+## Proportions: 25 to 34 years -\> 35 to 44 years
+
+```{r, fig.retina=2}
+alluvium_plots$teer_alluvium_plot[[2]]
+```
+
+------------------------------------------------------------------------
+
+## Proportions: 35 to 44 years -\> 45 to 54 years
+
+```{r, fig.retina=2}
+alluvium_plots$teer_alluvium_plot[[3]]
+
+```
+
+------------------------------------------------------------------------
+
+## Proportions: 45 to 54 years -\> 55 to 64 years
+
+```{r, fig.retina=2}
+alluvium_plots$teer_alluvium_plot[[4]]
+```
+
+------------------------------------------------------------------------
+
+
+## Counts: 15 to 24 years -\> 25 to 34 years                 
+
+<video width="800" controls>                                  
+
+<source src="out/counts/15-24 to 25-34.mp4" type="video/mp4"> 
+
+Your browser does not support the video tag. </video>         
+
+---------------------------------------------------------------
 
 ## Counts: 25 to 34 years -\> 35 to 44 years
 
@@ -307,7 +363,6 @@ Your browser does not support the video tag. </video>
 <source src="out/counts/25-34 to 35-44.mp4" type="video/mp4">
 
 Your browser does not support the video tag. </video>
-
 
 ------------------------------------------------------------------------
 
@@ -319,7 +374,6 @@ Your browser does not support the video tag. </video>
 
 Your browser does not support the video tag. </video>
 
-
 ------------------------------------------------------------------------
 
 ## Counts: 45 to 54 years -\> 55 to 64 years
@@ -329,46 +383,6 @@ Your browser does not support the video tag. </video>
 <source src="out/counts/45-54 to 55-64.mp4" type="video/mp4">
 
 Your browser does not support the video tag. </video>
-
-------------------------------------------------------------------------
-
-## TEER Summaries
-
--   The animations above made use of Multidimensional scaling (MDS) of the skill distances between occupations.
--   Because distances are based on 10D data (the first 10 principal components), the 2D "locations" of the origin and destination occupations (where the bubbles start and end) should be taken with a grain of salt.
--   If we aggregate proportion flows to the TEER level, we can visualize using (static) alluvial plots.
-
-------------------------------------------------------------------------
-
-## Proportions: 15 to 24 years -\> 25 to 34 years
-
-```{r, fig.retina=2}
-#alluvium$prop_alluvium_plot[[1]]
-```
-
-------------------------------------------------------------------------
-
-## Proportions: 25 to 34 years -\> 35 to 44 years
-
-```{r, fig.retina=2}
-#alluvium$prop_alluvium_plot[[2]]
-```
-
-------------------------------------------------------------------------
-
-## Proportions: 35 to 44 years -\> 45 to 54 years
-
-```{r, fig.retina=2}
-#alluvium$prop_alluvium_plot[[3]]
-```
-
-------------------------------------------------------------------------
-
-## Proportions: 45 to 54 years -\> 55 to 64 years
-
-```{r, fig.retina=2}
-#alluvium$optimal_alluvium_plot[[4]]
-```
 
 ------------------------------------------------------------------------
 
