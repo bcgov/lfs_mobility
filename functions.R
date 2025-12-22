@@ -250,3 +250,32 @@ max_mass <- function(x) {
     max()
 }
 
+plot_extra <- function(lst, movie_name, component, xlab, join_var){
+  tbbl <- skills$nocs_we_want|>
+    inner_join(lst[[component]], by = setNames(join_var, "noc_2021"))|>
+    filter(extra_mass>0)|>
+    slice_max(extra_mass, n=40)|>
+    left_join(priority)
+
+  if(join_var=="from_id"){
+    plt <- ggplot(tbbl, aes(extra_mass, fct_reorder(noc_plus_title, extra_mass)))
+  }else{
+    plt <- ggplot(tbbl, aes(extra_mass, fct_reorder(noc_plus_title, extra_mass), fill=category))
+  }
+  plt+
+    geom_col(alpha=.5)+
+    scale_x_continuous(labels=scales::comma, limits = c(0,120000))+
+    theme_minimal()+
+    labs(title=paste(xlab, "for", movie_name),
+         y=NULL,
+         x=xlab,
+         fill="Immigration")
+}
+
+
+
+
+
+
+
+

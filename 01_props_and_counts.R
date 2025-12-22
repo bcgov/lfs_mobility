@@ -33,6 +33,12 @@ source("functions.R")
 #storage lists for objects------------------------------
 lfs <- list()
 skills <- list()
+#immigration priority-----------------------------------
+priority <- read_csv(here("data", "canadian_immigration_priority_nocs.csv"))|>
+  clean_names()|>
+  mutate(category="priority",
+         noc_2021=as.character(noc_2021))
+
 #read in skills data---------------------------------------
 skills$mapping <- read_excel(here("data","mapping", "onet2019_soc2018_noc2016_noc2021_crosswalk_consolodated.xlsx"))%>%
   mutate(noc_2021=str_pad(noc2021, "left", pad="0", width=5))%>%
@@ -221,12 +227,19 @@ results$tbbl <- bind_cols(results$from_sorted, results$to_sorted)|>
          max_count= max_mass(counts),
          count_segments=map2(counts, mds_coords, make_segment_data),
          count_long=map(count_segments, make_long),
-         count_base_plot=pmap(list(count_long, counts_cost, max_count), make_base_plot)
+         count_base_plot=pmap(list(count_long, counts_cost, max_count), make_base_plot),
+         aextra=map2(counts, movie_name, plot_extra, "aextra", "Deletions", "from_id"),
+         bextra=map2(counts, movie_name, plot_extra, "bextra", "Insertions", "to_id")
          )
 
 results$tbbl|>
   select(teer_alluvium_plot)|>
   write_rds(here("out", "alluvium_plots.rds"))
+
+results$tbbl|>
+  select(aextra, bextra)|>
+  write_rds(here("out", "extras.rds"))
+
 
 #animate_wrapper(results$tbbl$prop_base_plot, results$tbbl$movie_name, "props")
 #animate_wrapper(results$tbbl$count_base_plot, results$tbbl$movie_name, "counts")

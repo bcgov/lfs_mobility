@@ -22,12 +22,94 @@ execute:
 
 ```{r, include=FALSE}
 library(tidyverse)
+library(ggrepel)
 library(here)
 library(kableExtra)
+library(conflicted)
+conflicts_prefer(dplyr::filter)
+#functions-------------------------
+plot_transport <- function(flows, pts, title = "", curvature = 0.25, n = 100) {
+
+  stopifnot(all(c("from","to","amt") %in% names(flows)))
+  stopifnot(all(c("id","x","y","source","target") %in% names(pts)))
+
+  # attach coords
+  edges <- flows |>
+    dplyr::mutate(edge_id = dplyr::row_number()) |>
+    dplyr::left_join(pts, by = c("from" = "id")) |>
+    dplyr::rename(x0 = x, y0 = y) |>
+    dplyr::left_join(pts, by = c("to" = "id")) |>
+    dplyr::rename(x1 = x, y1 = y) |>
+    dplyr::mutate(
+      dx = x1 - x0,
+      dy = y1 - y0,
+      dist = sqrt(dx^2 + dy^2),
+
+      # unit perpendicular (left normal)
+      px = dplyr::if_else(dist > 0, -dy / dist, 0),
+      py = dplyr::if_else(dist > 0,  dx / dist, 0),
+
+      # quadratic Bézier control point (scaled by segment length)
+      cx = (x0 + x1) / 2 + curvature * dist * px,
+      cy = (y0 + y1) / 2 + curvature * dist * py
+    )
+
+  # expand each edge into a Bézier polyline
+  t_seq <- seq(0, 1, length.out = n)
+
+  paths <- edges |>
+    tidyr::crossing(t = t_seq) |>
+    dplyr::mutate(
+      # quadratic Bézier: B(t) = (1-t)^2 P0 + 2(1-t)t C + t^2 P1
+      x = (1 - t)^2 * x0 + 2 * (1 - t) * t * cx + t^2 * x1,
+      y = (1 - t)^2 * y0 + 2 * (1 - t) * t * cy + t^2 * y1
+    )
+
+  # label point at t = 0.5 (exactly on the drawn curve)
+  labels <- edges |>
+    dplyr::mutate(
+      t = 0.5,
+      x_lab = (1 - t)^2 * x0 + 2 * (1 - t) * t * cx + t^2 * x1,
+      y_lab = (1 - t)^2 * y0 + 2 * (1 - t) * t * cy + t^2 * y1
+    )
+
+  ggplot2::ggplot() +
+    ggplot2::geom_point(data = pts, ggplot2::aes(x, y, size=source), alpha=.5, colour="#6F4E37") +
+    scale_size_area(max_size = 12)+
+
+    # draw our own curves (so we control the geometry)
+    ggplot2::geom_path(
+      data = paths,
+      ggplot2::aes(x, y, group = edge_id, linewidth = amt),
+      arrow = ggplot2::arrow(length = grid::unit(0.2, "cm")),
+      lineend = "round",
+      color = "steelblue"
+    ) +
+
+    ggrepel::geom_text_repel(
+      data = pts,
+      mapping = aes(x, y, label = id),
+      seed = 123
+    ) +
+
+    # distance labels: EXACTLY on the curve
+    ggplot2::geom_text(
+      data = labels,
+      ggplot2::aes(x_lab, y_lab, label = sprintf("d=%.2f", dist)),
+      nudge_y = .04) +
+
+    ggplot2::scale_linewidth(range = c(1, 3), guide = "none") +
+    ggplot2::coord_equal(xlim = c(-0.25, 1.05), ylim = c(-0.25, 1.05)) +
+    ggplot2::theme_minimal(base_size = 12) +
+    ggplot2::labs(title = title, x = NULL, y = NULL)+
+    theme(legend.position = "none")
+}
+#read objects----------------------
 skills <- read_rds(here("out","skills.rds"))
 source_dest_plots<- read_rds(here("out","source_dest_plots.rds"))
-dirt <- read_rds(here("out","dirt.rds"))
 alluvium_plots <- read_rds(here("out", "alluvium_plots.rds"))
+extras <-  read_rds(here("out", "extras.rds"))
+greedy_vs_optimal <- read_rds(here("out","greedy_vs_optimal.rds"))
 ```
 
 ## Introduction
@@ -124,49 +206,119 @@ print(source_dest_plots$plot[[4]])
 
 ## Earth mover's problem:
 
--   Suppose goal is to end up with 4 evenly sized piles of dirt (2.5kg each).
--   Initially, the piles are arranged in a unit square, and have masses 1kg, 2kg, 3kg, 4kg.
--   Cost is defined to be $\sum mass \times distance$.
+::: {.column width="35%"}
 
+-  Suppose you initially have 4 piles of dirt of sizes 1,2,3, and 4.
+-  What you want is 4 equal piles of dirt (2.5 each).
+-  $Cost=\sum mass\times distance$
+
+::: {.fragment}
 ```{r}
-knitr::include_graphics(here("images","just_dirt.svg"))
+# locations
+pts <- tibble(
+  id = c("P1", "P2", "P3", "P4"),
+  x  = c(1, 0, 0.01, 0.30),
+  y  = c(1, 0, 0.00, 0.30),
+  source = c(1, 2, 3, 4),
+  target = rep(2.5, 4)
+) |>
+  mutate(difference = source - target)
+
+kable(pts, format = "html") |>
+  kable_styling(font_size = 14)
 ```
+:::
+:::
+
+::: {.column width="10%"}
+
+:::
+
+::: {.column width="55%"}
+
+::: {.fragment}
+```{r, fig.width=5, fig.height=5}
+greedy_flows <- tibble(
+  from = c("P4", "P4", "P3"),
+  to   = c("P2", "P1", "P1"),
+  amt  = c(0.5, 1.0, 0.5)
+)
+
+optimal_flows <- tibble(
+  from = c("P3", "P4"),
+  to   = c("P2", "P1"),
+  amt  = c(0.5, 1.5)
+)
+
+ggplot() +
+  geom_point(data = pts, ggplot2::aes(x, y, size=source), colour="#6F4E37", alpha=.5) +
+  scale_size_area(max_size = 12)+
+  geom_text_repel(data = pts,
+                  mapping= aes(x, y, label = id),
+                  seed = 123) +
+  coord_equal(xlim = c(-0.25, 1.05), ylim = c(-0.25, 1.05)) +
+  theme_minimal(base_size = 12) +
+  labs(x = NULL, y = NULL)+
+  theme(legend.position = "none")
+
+```
+:::
+:::
 
 ------------------------------------------------------------------------
 
-## Transport Plans {.columns}
+## Greedy: Largest surplus to closest deficit.
+
+::: {.column width="35%"}
+
+1) Move 0.5 from P4(largest surplus) → P2(closest deficit) to fill P2: Cost=0.5×0.42=0.21
+
+2) Move 1.0 from P4(largest surplus) → P1(2nd closest deficit): Cost=1.0×0.99=0.99
+
+3) Move 0.5 from P3(2nd largest surplus) → P1(last deficit): Cost=0.5×1.4=0.7
+
+- Total cost: 0.21+0.99+0.7=1.9
+
+:::
+
+::: {.column width="65%"}
+
+```{r, fig.width=6, fig.height=6}
+plot_transport(greedy_flows, pts, "Greedy Transport Plan")
+```
+
+:::
+
+------------------------------------------------------------------------
+
+## Optimal: P2 cheap destination for fragile surplus P3.
 
 ::: {.column width="50%"}
-```{r, out.width="100%"}
-knitr::include_graphics(here("images","just_dirt.svg"))
+
+1) Move 0.5 from P3→P2: Cost=0.5×0.01=0.005
+2) Move 1.5 from P4→P1: Cost=1.5×0.99=1.49
+- Total cost: 0.0050+1.4848=1.495
+
+::: {.fragment}
+
+```{r, fig.height=3.5, fig.width=5}
+greedy_vs_optimal
 ```
+
+:::
+
 :::
 
 ::: {.column width="50%"}
-### Naive Transport
 
-```{r}
-dirt$naive_cost|>
-  kable()|>
-  kable_styling(full_width = FALSE, font_size = 14)
+```{r, fig.width=6, fig.height=6}
+plot_transport(optimal_flows, pts, "Optimal Transport Plan")
 ```
 
-### Optimal Transport
-
-```{r}
-dirt$opt_cost|>
-  kable()|>
-  kable_styling(full_width = FALSE, font_size = 14)
-```
 :::
 
--   For what arrangement of the piles would naive and optimal transport coincide?
-
 ------------------------------------------------------------------------
 
-![](images/tetrahedron_with_images.gif){width="60%"}
-
-------------------------------------------------------------------------
 
 ## How is this related to labour market?
 
@@ -211,7 +363,7 @@ theme_minimal()
 
 ## Distances Between Occupations {.columns}
 
-::: {.column width="70%"}
+::: {.column width="65%"}
 ```{r, fig.width=6, fig.height=6}
 mat <- skills[["skills_noc_dist"]]
 hc  <- hclust(as.dist(mat), method = "average")
@@ -245,9 +397,10 @@ p |> plotly::layout(
 ```
 :::
 
-::: {.column width="30%"}
+::: {.column width="35%"}
 -   Diagonal is distance between an occupation and itself.
--   Most distinct skill set in yellow: other performers: e.g. erotic dancer, face painter, influencer, magician, rodeo horse rider, Santa Claus, ventriloquist
+-   Most distinct (and diverse?) skill set in yellow: *Other Performers*.
+-   e.g. erotic dancer, face painter, influencer, magician, rodeo horse rider, Santa Claus, ventriloquist.
 -   Clusters in darker squares along the diagonal.
 :::
 
@@ -345,6 +498,19 @@ alluvium_plots$teer_alluvium_plot[[4]]
 
 ------------------------------------------------------------------------
 
+## Counts:
+
+- Everything to this point has been based on proportions: we have assumed a closed system where there are no external flows (balanced optimal transport).
+- Next we move on to counts, where the aggregate counts of workers differ between time periods.
+- For the younger age brackets the aggregate count increased: insertions are necessary (immigration)
+- In the eldest bracket the aggregate count decreased: deletions are necessary (from death, retirement or emigration).
+
+## Unbalanced Optimal Transport:
+
+- Allows for costly insertions and deletions: Cost is assumed to be half the maximal distance between occupations. 
+- Insertion of workers in underweight remote^[in skill space] destination occupations when aggregate count is increasing.
+- Deletion of workers from overweight remote^[in skill space] origin occupations when aggregate count decreasing.
+- Inter-occupational mobility is muted when compared to proportions: we do not need to move as many people internally when we can insert or delete from an external source. 
 
 ## Counts: 15 to 24 years -\> 25 to 34 years                 
 
@@ -385,6 +551,82 @@ Your browser does not support the video tag. </video>
 Your browser does not support the video tag. </video>
 
 ------------------------------------------------------------------------
+
+## Insertions and Deletions
+
+-  When modelling counts, the cohort size changes over time necessitating insertions (first 3 transitions) and deletions(last transition).
+-  In the following slides we show the top 40 strictly positive insertions and deletions.
+-  For the insertions we colour by whether the NOC is an immigration priority.
+-  This priority list was produced using an AI-assisted synthesis of publicly available federal and provincial immigration program information up to mid 2025.
+
+
+## Insertions 15 to 24 years -\> 25 to 34 years  
+
+```{r}
+extras$bextra[[1]]
+```
+
+---------------------------------------------------------------------
+
+
+## Insertions 25 to 34 years -\> 35 to 44 years  
+
+```{r}
+extras$bextra[[2]]
+```
+
+---------------------------------------------------------------------
+
+
+## Insertions 35 to 44 years -\> 45 to 54 years  
+
+```{r}
+extras$bextra[[3]]
+```
+
+---------------------------------------------------------------------
+
+
+## Deletions 45 to 54 years -\> 55 to 64 years  
+
+```{r}
+extras$aextra[[4]]
+```
+
+---------------------------------------------------------------------
+
+## Nearest neighbour for Logging machinery operators
+
+```{r}
+skills[["skills_noc_dist"]]|>
+  as.data.frame()|>
+  rownames_to_column("origin")|>
+  pivot_longer(cols=-origin, names_to = "destination", values_to = "distance")|>
+  filter(origin!=destination,
+         str_detect(origin,"Logging machinery operators"))|>
+  slice_min(distance, n=10)|>
+  kableExtra::kable(format = "html") |>
+  kableExtra::kable_styling(font_size = 14)
+```
+
+------------------------------------------------------------------------
+
+## Optimal Transport for Logging machinery operators
+
+```{r}
+skills[["skills_noc_dist"]]|>
+  as.data.frame()|>
+  rownames_to_column("origin")|>
+  pivot_longer(cols=-origin, names_to = "destination", values_to = "distance")|>
+  filter(str_detect(origin,"Logging machinery operators"),
+         str_detect(destination, "Longshore")
+         )|>
+  kableExtra::kable(format = "html") |>
+  kableExtra::kable_styling(font_size = 14)
+```
+
+- Kind of underwhelming? 
+- File Optimal Transport Theory under "kind of cool, but ultimately useless for this application".
 
 ## References
 
