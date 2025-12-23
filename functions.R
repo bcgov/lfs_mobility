@@ -78,6 +78,7 @@ naive_transport <- function(from, to){
 }
 
 make_base_plot <- function(lst, cost, max_size){
+ # browser()
   subtitle <- if(!is.na(cost)){
     paste0("Total Cost = ",fmt_auto(cost))
   }else{
@@ -198,8 +199,6 @@ unbalanced_wrapper <- function(from, to, ...) {
 }
 
 make_segment_data <- function(transitions, coordinates){
-  coordinates <- coordinates|>
-    rownames_to_column("noc_2021")
   transitions$plan|>
     left_join(coordinates, by = c("from_id" = "noc_2021")) %>%
     rename(x_from = V1, y_from = V2) %>%

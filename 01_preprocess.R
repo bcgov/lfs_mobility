@@ -103,7 +103,9 @@ skills$max_dist <- dist(skills$noc_coords, method = "euclidean")|>
   max()
 
 skills$mds2 <- cmdscale(skills$skills_noc_dist, k = 2)|>
-  as.data.frame()
+  as.data.frame()|>
+  rownames_to_column("noc_2021")|>
+  mutate(noc_2021=str_sub(noc_2021, 1, 5))
 
 write_rds(skills, here("out", "skills.rds"))
 
@@ -241,8 +243,8 @@ results$tbbl|>
   write_rds(here("out", "extras.rds"))
 
 
-#animate_wrapper(results$tbbl$prop_base_plot, results$tbbl$movie_name, "props")
-#animate_wrapper(results$tbbl$count_base_plot, results$tbbl$movie_name, "counts")
+animate_wrapper(results$tbbl$prop_base_plot, results$tbbl$movie_name, "props")
+animate_wrapper(results$tbbl$count_base_plot, results$tbbl$movie_name, "counts")
 
 
 
