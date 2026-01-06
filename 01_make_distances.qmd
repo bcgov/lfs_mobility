@@ -1,0 +1,438 @@
+---
+title: "hierarchical vs skills based distances"
+author: "Richard Martin"
+format:
+  html:
+    page-layout: full
+    toc: true
+    code-fold: true
+    code-summary: "Show code"
+execute:
+  echo: true
+  warning: false
+  message: false
+---
+```{r, include=FALSE}
+options(scipen = 999)
+library(vegan)
+library(tidyverse)
+library(here)
+library(janitor)
+library(vroom)
+library(plotly)
+library(assertthat)
+library(readxl)
+library(conflicted)
+conflicts_prefer(dplyr::filter)
+conflicts_prefer(vroom::cols)
+conflicts_prefer(vroom::col_double)
+conflicts_prefer(vroom::col_character)
+```
+
+```{r}
+source("functions.R")
+#storage lists for objects------------------------------
+skills <- list()
+#immigration priority-----------------------------------
+priority <- read_csv(here("data", "canadian_immigration_priority_nocs.csv"))|>
+  clean_names()|>
+  mutate(category="priority",
+         noc_2021=as.character(noc_2021))
+
+#read in skills data---------------------------------------
+skills$mapping <- read_excel(here("data","mapping", "onet2019_soc2018_noc2016_noc2021_crosswalk_consolodated.xlsx"))%>%
+  mutate(noc_2021=str_pad(noc2021, "left", pad="0", width=5))%>%
+  select(noc_2021, noc2021_title, o_net_soc_code = onetsoc2019)%>%
+  distinct()
+
+skills$nocs_we_want <- skills$mapping |>
+  select(noc_2021, noc2021_title) |>
+  distinct()|>
+  mutate(noc_plus_title=paste(noc_2021, noc2021_title, sep=": "))|>
+  select(noc_2021, noc_plus_title)
+
+skills$onet_raw <- tibble(file=c("Skills.xlsx", "Abilities.xlsx", "Knowledge.xlsx", "Work Activities.xlsx"))%>%
+  mutate(data=map(file, read_data))%>%
+  select(-file)%>%
+  unnest(data)%>%
+  pivot_wider(id_cols = o_net_soc_code, names_from = element_name, values_from = score)%>%
+  inner_join(skills$mapping)%>%
+  ungroup()%>%
+  select(-o_net_soc_code, -noc2021_title)%>%
+  select(noc_2021, everything())
+
+skills$onet_mapped <- skills$onet_raw|>
+  group_by(noc_2021)%>%
+  summarise(across(where(is.numeric), \(x) mean(x, na.rm = TRUE)))
+
+skills$two_digit <- skills$onet_raw|>
+  mutate(noc_two=str_sub(noc_2021,1, 2))|>
+  group_by(noc_two)|>
+  summarise(across(contains(":"), ~mean(.x, na.rm = TRUE)))
+
+skills$four_digit <- skills$onet_raw|>
+  mutate(noc_four=str_sub(noc_2021,1, 4))|>
+  group_by(noc_four)|>
+  summarise(across(contains(":"), ~mean(.x, na.rm = TRUE)))
+
+skills$missing_four <- anti_join(skills$nocs_we_want, skills$onet_raw|>select(noc_2021))|>
+  mutate(noc_four=str_sub(noc_2021, 1, 4),
+         .after=noc_2021)|>
+  inner_join(skills$four_digit)|>
+  select(-noc_four, -noc_plus_title)
+
+skills$missing_two <- anti_join(skills$nocs_we_want, skills$onet_raw|>select(noc_2021))|>
+  anti_join(skills$missing_four|>select(noc_2021))|>
+  mutate(noc_two=str_sub(noc_2021, 1, 2),
+         .after=noc_2021)|>
+  inner_join(skills$two_digit)|>
+  select(-noc_two, -noc_plus_title)
+
+skills$onet_full <- bind_rows(skills$onet_mapped, skills$missing_four, skills$missing_two)|>
+  inner_join(skills$nocs_we_want)|>
+  ungroup()|>
+  arrange(noc_2021)|>
+  select(-noc_2021)|>
+  column_to_rownames("noc_plus_title")
+
+skills$onet_pca <- prcomp(skills$onet_full, center=TRUE, scale=TRUE)
+skills$noc_coords <- skills$onet_pca$x[, 1:10]#keep first 10 components
+skills$skills_noc_dist<- dist(skills$noc_coords, method = "euclidean")|>
+  as.matrix()
+skills$mean_dist <- dist(skills$noc_coords, method = "euclidean")|>
+  mean()
+
+skills$mds2 <- cmdscale(skills$skills_noc_dist, k = 2)|>
+  as.data.frame()|>
+  rownames_to_column("noc_2021")|>
+  mutate(noc_2021=str_sub(noc_2021, 1, 5))
+
+write_rds(skills, here("out", "skills.rds"))
+```
+
+Statistics Canada uses several procedures to suppress or modify data before release, in order to protect the privacy of individuals, households, and businesses. This is part of its legal and ethical obligation under the Statistics Act, which strictly prohibits the release of any information that could identify a respondent without their consent. Suppression makes it very difficult to study occupational mobility in Canada. For example, we could ask Statistics Canada to perform a linkage between the 2016 Census and the 2021 Census. The linked sample coverage would be about $\left(\frac14\right)^2=\frac{1}{16}$th of the population. The 2016 Census estimated that there were about [16,073,685](https://www12.statcan.gc.ca/census-recensement/2016/dp-pd/prof/details/page.cfm?Lang=E&Geo1=PR&Code1=01&Geo2=PR&Code2=01&SearchText=01&SearchType=Begins&SearchPR=01&B1=Labour&TABID=3&type=0) employees in Canada.  To study occupational mobility at the 5 digit NOC level, we need to populate a $512\times512$ transition matrix with roughly one million observations.  If we heroically assume that 50% of people change occupations every 5 years, at most we would have 500,000 observations to fill the 261,632 off diagonal cells.  Given the suppression rules, there is just too little data to study occupational mobility at the 5 digit NOC level. 
+
+What to do? Statistics Canada does provide reliable snapshots of (aggregate) occupation composition at points in time: e.g. we could look at occupational composition of individuals ages 15-24 in the 2016 Census, and occupational composition of individuals of age 20-29 in the 2021 Census. Or alternatively we could use LFS data and a longer time window allowing for a greater shifts in composition: e.g. compare occupational composition of those 15-24 in the year 2014, with those 25-34 in the year 2024.   
+
+Regardless, comparing composition snapshots tells us nothing about occupational mobility at the individual level. Optimal transport theory can be used to find the least costly way of moving from one occupational composition snapshot to another. The resulting transport plan should be interpreted as a lower bound on reallocation costs consistent with observed marginals, not as a reconstruction of actual worker flows. 
+
+Optimal transport depends crucially on how we estimate distance between occupations, as the cost being minimized is the sum of the mass moved times the distance moved. Distance between occupations is inherently multidimensional. Skill-based distances—such as those derived from task or skill similarity—capture the technological and human-capital feasibility of worker reallocation: occupations that require similar skills are, in principle, easier to transition between. At the same time, labor-market transitions are shaped by institutional and hierarchical features that are not reducible to skills alone. Occupational classifications, credential requirements, career ladders, and wage structures impose discrete barriers and frictions that influence which transitions are plausible, costly, or effectively prohibited.
+
+Because the optimal transport plan is highly sensitive to the underlying distance matrix, relying on a single notion of occupational distance risks embedding strong—and potentially untested—assumptions about the nature of labor-market frictions. A purely skill-based distance may understate institutional barriers, while a purely hierarchical or wage-based distance may overstate them by ignoring fine-grained task substitutability. The same observed marginals can imply vastly different transport plans when the distance metric changes.
+
+For this reason, we consider both skill-based and hierarchical/wage-based distance constructions. Rather than treating these alternatives as competing measures, we view them as capturing distinct but complementary dimensions of occupational separation. Comparing the resulting transport geometries allows us to assess the extent to which institutional occupational hierarchies reflect underlying skill similarity, and to identify where they diverge. This comparison also provides a natural robustness check for optimal transport analyses, clarifying which features of inferred mobility patterns are driven by observed marginals and which depend on modeling assumptions about distance.
+
+## Create hierarchical NOC distance matrix
+
+The NOC is a nested, hierarchical taxonomy of occupations. Each additional digit refines the description along task, skill, and responsibility dimensions. In NOC 2021, occupations are coded at five digits, but those digits are not symmetric — they encode levels of abstraction.
+
+-  First digit — Broad occupational sector, which roughly corresponds to type of work or economic function. Crossing the first digit usually implies major retraining, different labour markets, different credential regimes.  This is the strongest barrier in the hierarchy.
+
+-  Second digit — TEER category.  This digit encodes Training, Education, Experience, and Responsibilities (TEER).  TEER is a human capital / skill-depth ordering.  Moves across TEER levels reflect upgrading or downgrading of required qualifications.
+
+-  First three digits — Major occupational group. Jobs share broad task domain and similar credential pathways. Mobility here often requires retraining but not full career switching.
+
+-  First four digits — Minor occupational group. Occupations are closely related, and skill transferability is high.
+
+-  Five digits — Unit occupation.  This is the most granular level: Jobs sharing the same 5 digit NOC code are considered the same occupation. Differences within a 5 digit NOC often reflect things like industry context, employer size and niche specialization.
+
+Given the above, we define hierarchical distance by the following decision tree:
+
+1) If NOCs share all five digits, distance is 0.
+2) Else if NOCs share the first 4 digits, distance is 1.
+3) Else if NOCs share the first 3 digits, distance is 2.
+4) Else if NOCs share the first digit, distance is 3 + |$\Delta$TEER| 
+5) Else distance is 9.
+
+```{r}
+h_dist <- function(tbbl){
+  tbbl |>
+    mutate(origin=str_pad(origin, 5, side="left", pad="0"),
+           destination=str_pad(destination, 5, side="left", pad="0"),
+           teer_o = as.integer(str_sub(origin, 2, 2)),
+           teer_d = as.integer(str_sub(destination, 2, 2)),
+           teer_gap = abs(teer_o - teer_d),
+           dist = case_when(origin == destination ~ 0,
+                            str_sub(origin,1,4) == str_sub(destination,1,4) ~ 1,
+                            str_sub(origin,1,3) == str_sub(destination,1,3) ~ 2,
+                            str_sub(origin,1,1) == str_sub(destination,1,1) ~ 3 + teer_gap,
+                            TRUE ~ 9))|>
+    select(origin, destination, distance=dist)
+}
+
+hierarchy_distance <- crossing(skills$nocs_we_want|>select(origin=noc_2021),
+                               skills$nocs_we_want|>select(destination=noc_2021))|>
+  h_dist()|>
+  select(origin, destination, distance)
+
+h_counts <- hierarchy_distance|>
+  group_by(distance)|>
+  count()|>
+  mutate(distance=factor(distance))
+
+h_counts <- h_counts|>
+  ggplot(aes(distance, n))+
+  geom_col(alpha=.5)+
+  scale_y_continuous(trans="log10", labels=scales::comma)+
+  theme_minimal()
+
+write_rds(h_counts, here("out", "h_counts.rds"))
+plotly::ggplotly(h_counts)
+```
+
+Note that the hierarchical distance metric is discrete: In order to break the numerous ties, we make use of [wage data](https://open.canada.ca/data/en/dataset/adad580f-76b0-4502-bd05-20c125de9116/resource/9da94d63-b178-4a64-aeb3-b6a3bd721ad2) to perturb the hierarchical distances.  Specifically, we use a 3 dimensional summary of the wage distribution for each NOC: 
+
+1) $log10(median)$ as a measure of central tendency, 
+2) $log10(high)-log10(low)$ as a measure of dispersion, and
+3) $[log10(high)-log10(median)]-[log10(median)-log10(low)]$ as a measure of skewness. 
+
+Next we scale these measures so that they have mean zero and unit variance, placing them on equal footing in the construction of wage-based distances. We then compute pairwise distances between occupations in this two-dimensional scale–location space. The resulting wage distances are subsequently rescaled to lie in the interval [0,1]. This rescaling ensures that hierarchical distance—constructed in discrete increments of one—exerts greater influence on the combined distance metric than wage information when the two are added together. Empirically, the rescaled wage distance attains its maximum value of one only for the occupation pair XXX, which already has the maximal hierarchical distance of nine. For all other occupation pairs, rescaled wage distances are strictly below one (with a maximum of 0.95), ensuring that wage information refines distances within hierarchical categories without ever overturning the hierarchical ordering.
+
+In other words, wage distances serve as:
+
+-  a deterministic tie-breaker within discrete institutional bins;
+-  a weak curvature within otherwise flat regions of the cost surface;
+-  a realism-enhancing device that avoids excessive degeneracy in optimal transport plans.
+
+
+```{r}
+canada_log_wages <- vroom::vroom(here("data", "wages.csv"))|>
+  clean_names()|>
+  filter(er_name=="Canada")|>
+  select(noc=noc_cnp, low=contains("low"), median=contains("median"), high=contains("high"))|>
+  mutate(low=log10(if_else(low>1000, low/2080, low)),
+         median=log10(if_else(median>1000, median/2080, median)),
+         high=log10(if_else(high>1000, high/2080, high)),
+         noc=str_remove_all(noc, "NOC_"),
+         noc=if_else(noc %in% paste0("000",11:15), "00018", noc))|>
+  group_by(noc)|>
+  summarise(across(where(is.numeric), ~ mean(.x, na.rm = TRUE)))|>
+  mutate(dispersion=(high-low),
+         skew=(high-median)-(median-low)
+         )|>
+  select(noc, median, dispersion, skew)|>
+  left_join(skills[["nocs_we_want"]], by=c("noc"="noc_2021"))
+
+wage_dist <- canada_log_wages|>
+  select(-noc_plus_title)|>
+  column_to_rownames("noc")|>
+  scale()|>
+  dist()|>
+  as.matrix()|>
+  as.data.frame()|>
+  rownames_to_column("origin")|>
+  pivot_longer(cols=-origin, names_to = "destination", values_to = "wage_distance")|>
+  ungroup()|> #it shouldn't be grouped, but just to make sure min and max are global...
+  mutate(wage_dist_rescaled = scales::rescale(wage_distance, to = c(0, 1)))|>
+  select(origin, destination, wage_dist_rescaled)
+
+alternative_distance <- full_join(hierarchy_distance, wage_dist,
+                                  by = c("origin", "destination"))|>
+  mutate(alt_dist=distance+wage_dist_rescaled)|>
+  arrange(origin, destination)|>
+  select(origin, destination, alt_dist)|>
+  pivot_wider(names_from = destination, values_from = alt_dist)|>
+  column_to_rownames("origin")
+
+wage_plot <- plot_ly(
+  data = canada_log_wages,
+  x = ~median,
+  y = ~dispersion,
+  z = ~skew,
+  type = "scatter3d",
+  mode = "markers",
+  text = ~noc_plus_title,
+  hoverinfo = "text",
+  marker = list(
+    size = 5,
+    opacity = 0.8
+  )
+) |>
+  plotly::layout(
+    scene = list(
+      xaxis = list(title = "Location: log(p50)"),
+      yaxis = list(title = "Scale: log(p90) - log(p10)"),
+      zaxis = list(title = "Skew")
+    )
+  )
+
+write_rds(wage_plot, here("out", "wage_plot.rds"))
+wage_plot
+```
+
+
+## Skills based distance matrix:
+
+Next make sure that the skills based and hierarchical based distance matricies share the same
+structure.
+
+```{r}
+skills_dist <- skills[["skills_noc_dist"]]|>
+  as.data.frame()
+rownames(skills_dist) <- str_sub(rownames(skills_dist), 1, 5)
+colnames(skills_dist) <- str_sub(colnames(skills_dist), 1, 5)
+#Sanity check: are matricies organized same way?
+stopifnot(
+  identical(rownames(alternative_distance), rownames(skills_dist)),
+  identical(colnames(alternative_distance), colnames(skills_dist))
+)
+```
+
+## Compare the two distance metrics:
+
+```{r, cache=TRUE}
+mantel <- vegan::mantel(as.dist(alternative_distance), as.dist(skills_dist), method = "spearman")
+```
+
+A Mantel test based on Spearman’s rank correlation indicates a moderate association
+between the skill-based and institutional occupational distance matrices 
+(r = `r round(mantel$statistic,2)`, p = `r mantel$signif`), implying that 
+occupations that are close in skill space also tend to be close in the NOC/wage
+hierarchy, though the correspondence is far from exact.
+
+```{r}
+X_skill_2 <- cmdscale(as.dist(skills_dist), k = 2, eig = TRUE)$points
+X_noc_2   <- cmdscale(as.dist(alternative_distance),   k = 2, eig = TRUE)$points
+test_2 <- protest(X_skill_2, X_noc_2, permutations = 9999)
+```
+
+To assess whether the two distance constructions imply similar low-dimensional
+occupational geometries, we compared two-dimensional classical MDS embeddings
+of the skill-based and institutional distance matrices using a Procrustes
+analysis with a permutation test. The resulting Procrustes correlation is 
+`r round(test_2$scale, 2)`, indicating a substantial alignment between the two 
+maps after optimal rotation and rescaling. A permutation test with 9,999 random 
+label permutations strongly rejects the null hypothesis of no association
+(p < `r test_2$signif`), implying that the observed geometric correspondence 
+is far greater than would be expected by chance. While the fit is far from 
+perfect, the magnitude of the correlation suggests that the institutional 
+NOC/wage hierarchy captures a meaningful portion of the latent structure 
+underlying skill-based occupational similarity, even when attention is restricted 
+to a two-dimensional representation.
+
+```{r}
+X_skill_10 <- cmdscale(as.dist(skills_dist), k = 10, eig = TRUE)$points
+X_noc_10   <- cmdscale(as.dist(alternative_distance),   k = 10, eig = TRUE)$points
+test_10 <- protest(X_skill_10, X_noc_10, permutations = 9999)
+```
+
+To assess whether the correspondence between skill-based and institutional
+occupational distances extends beyond low-dimensional projections, we conducted
+a Procrustes comparison of ten-dimensional classical MDS embeddings derived
+from each distance matrix. The resulting Procrustes correlation is `r round(test_10$scale, 2)`,
+indicating a stronger geometric alignment than in two dimensions. A permutation
+test with 9,999 label permutations strongly rejects the null hypothesis of no
+association (p < `r test_10$signif`). This increase in alignment relative to the
+two-dimensional case suggests that the two distance constructions share
+additional latent structure that is not fully captured in a 2 dimension
+representation, consistent with the presence of higher-dimensional
+occupational heterogeneity.
+
+```{r}
+knn_overlap <- function(D1, D2, k = 10) {
+  stopifnot(
+    is.matrix(D1), is.matrix(D2),
+    nrow(D1) == nrow(D2),
+    ncol(D1) == ncol(D2)
+  )
+  n <- nrow(D1)
+  # For each row, get indices of k nearest neighbors (excluding self)
+  nn1 <- apply(D1, 1, function(x) order(x, method = "radix")[2:(k + 1)])
+  nn2 <- apply(D2, 1, function(x) order(x, method = "radix")[2:(k + 1)])
+    # Overlap per occupation
+  overlaps <- vapply(seq_len(n), function(i) {
+    length(intersect(nn1[, i], nn2[, i])) / k
+  }, numeric(1))
+  mean(overlaps)
+}
+
+knn5 <- knn_overlap(as.matrix(skills_dist), as.matrix(alternative_distance), k = 5)
+knn50 <- knn_overlap(as.matrix(skills_dist), as.matrix(alternative_distance), k = 50)
+```
+
+We conclude our comparison at the local level: How often do the n nearest neighbours
+overlap between the two distance metrics?  Local neighborhood agreement is limited 
+at very small scales but increases as neighborhoods expand. On average, 
+approximately `r scales::percent(knn5)` of each occupation's five nearest neighbors
+are shared across distance measures, rising to `r scales::percent(knn50)`
+ when neighborhoods of size 50 are considered. At both values of k, observed
+ overlap substantially exceeds random expectation, indicating systematic local
+ alignment. This pattern suggests that institutional distances reflect broader
+ skill-based similarity while diverging at very fine local scales.
+
+## Skills based distance:
+
+```{r, fig.height=6}
+mat <- skills[["skills_noc_dist"]]
+hc  <- hclust(as.dist(mat), method = "average")
+ord <- hc$order
+mat_ord <- mat[ord, ord]
+xlab <- as.character(colnames(mat_ord))
+ylab <- as.character(rownames(mat_ord))
+
+p <- plotly::plot_ly(
+  x = xlab,
+  y = ylab,
+  z = mat_ord,  # ← THIS is the critical line
+  type = "heatmap"
+)
+
+p |> plotly::layout(
+  width  = 600,
+  height = 500,
+  xaxis = list(
+    type = "category",
+    showticklabels = FALSE,
+    ticks = ""
+  ),
+  yaxis = list(
+    type = "category",
+    showticklabels = FALSE,
+    ticks = ""
+  )
+)
+```
+
+## Hierarchical Distance Matrix:
+
+```{r, fig.height=6}
+mat <- alternative_distance|>as.matrix()
+hc  <- hclust(as.dist(mat), method = "average")
+ord <- hc$order
+mat_ord <- mat[ord, ord]
+xlab <- as.character(colnames(mat_ord))
+ylab <- as.character(rownames(mat_ord))
+
+write_rds(mat_ord, here("out", "alternative_distance.rds"))
+
+h_dist_heat <- plotly::plot_ly(
+  x = xlab,
+  y = ylab,
+  z = mat_ord, 
+  type = "heatmap"
+)
+h_dist_heat <- h_dist_heat |> 
+  plotly::layout(
+    width  = 600,
+    height = 500,
+    xaxis = list(
+      type = "category",
+      showticklabels = FALSE,
+      ticks = ""
+    ),
+    yaxis = list(
+      type = "category",
+      showticklabels = FALSE,
+      ticks = ""
+  )
+)
+
+write_rds(h_dist_heat, here("out","h_dist_heat.rds"))
+h_dist_heat
+```
+
+
+
+
+
+

@@ -30,86 +30,14 @@ conflicts_prefer(vroom::col_character)
 cut_off <- .004 #for source destination plot
 #functions--------------------------
 source("functions.R")
-#storage lists for objects------------------------------
-lfs <- list()
-skills <- list()
-#immigration priority-----------------------------------
+#read data-------------------
 priority <- read_csv(here("data", "canadian_immigration_priority_nocs.csv"))|>
   clean_names()|>
-  mutate(category="priority",
-         noc_2021=as.character(noc_2021))
-
-#read in skills data---------------------------------------
-skills$mapping <- read_excel(here("data","mapping", "onet2019_soc2018_noc2016_noc2021_crosswalk_consolodated.xlsx"))%>%
-  mutate(noc_2021=str_pad(noc2021, "left", pad="0", width=5))%>%
-  select(noc_2021, noc2021_title, o_net_soc_code = onetsoc2019)%>%
-  distinct()
-
-skills$nocs_we_want <- skills$mapping |>
-  select(noc_2021, noc2021_title) |>
-  distinct()|>
-  mutate(noc_plus_title=paste(noc_2021, noc2021_title, sep=": "))|>
-  select(noc_2021, noc_plus_title)
-
-skills$onet_raw <- tibble(file=c("Skills.xlsx", "Abilities.xlsx", "Knowledge.xlsx", "Work Activities.xlsx"))%>%
-  mutate(data=map(file, read_data))%>%
-  select(-file)%>%
-  unnest(data)%>%
-  pivot_wider(id_cols = o_net_soc_code, names_from = element_name, values_from = score)%>%
-  inner_join(skills$mapping)%>%
-  ungroup()%>%
-  select(-o_net_soc_code, -noc2021_title)%>%
-  select(noc_2021, everything())
-
-skills$onet_mapped <- skills$onet_raw|>
-  group_by(noc_2021)%>%
-  summarise(across(where(is.numeric), \(x) mean(x, na.rm = TRUE)))
-
-skills$two_digit <- skills$onet_raw|>
-  mutate(noc_two=str_sub(noc_2021,1, 2))|>
-  group_by(noc_two)|>
-  summarise(across(contains(":"), ~mean(.x, na.rm = TRUE)))
-
-skills$four_digit <- skills$onet_raw|>
-  mutate(noc_four=str_sub(noc_2021,1, 4))|>
-  group_by(noc_four)|>
-  summarise(across(contains(":"), ~mean(.x, na.rm = TRUE)))
-
-skills$missing_four <- anti_join(skills$nocs_we_want, skills$onet_raw|>select(noc_2021))|>
-  mutate(noc_four=str_sub(noc_2021, 1, 4),
-         .after=noc_2021)|>
-  inner_join(skills$four_digit)|>
-  select(-noc_four, -noc_plus_title)
-
-skills$missing_two <- anti_join(skills$nocs_we_want, skills$onet_raw|>select(noc_2021))|>
-  anti_join(skills$missing_four|>select(noc_2021))|>
-  mutate(noc_two=str_sub(noc_2021, 1, 2),
-         .after=noc_2021)|>
-  inner_join(skills$two_digit)|>
-  select(-noc_two, -noc_plus_title)
-
-skills$onet_full <- bind_rows(skills$onet_mapped, skills$missing_four, skills$missing_two)|>
-  ungroup()|>
-  arrange(noc_2021)|>
-  inner_join(skills$nocs_we_want)|>
-  select(-noc_2021)|>
-  column_to_rownames("noc_plus_title")
-
-skills$onet_pca <- prcomp(skills$onet_full, center=TRUE, scale=TRUE)
-skills$noc_coords <- skills$onet_pca$x[, 1:10]#keep first 10 components
-skills$skills_noc_dist<- dist(skills$noc_coords, method = "euclidean")|>
-  as.matrix()
-skills$max_dist <- dist(skills$noc_coords, method = "euclidean")|>
-  max()
-
-skills$mds2 <- cmdscale(skills$skills_noc_dist, k = 2)|>
-  as.data.frame()|>
-  rownames_to_column("noc_2021")|>
-  mutate(noc_2021=str_sub(noc_2021, 1, 5))
-
-write_rds(skills, here("out", "skills.rds"))
-
-#read in lfs data
+  mutate(noc_2021=str_pad(noc_2021, width=5, side="left", pad="0"),
+         category="Priority")
+skills <- read_rds(here("out", "skills.rds"))
+alternative_distance <- read_rds(here("out", "alternative_distance.rds"))
+lfs <- list()
 
 lfs$lfs_data <- vroom(here("data","lfs", list.files(here("data","lfs"))),
                       col_types = cols(
@@ -186,6 +114,7 @@ results$from_sorted <- lfs$lfs_data|>
          from_prop=prop,
          from_count=count)|>
   group_by(age_in_from_year)|>
+  arrange(noc_5)|>
   nest()|>
   rename(from=data)|>
   mutate(from=map(from, column_to_rownames, "noc_5"))
@@ -202,6 +131,7 @@ results$to_sorted <- lfs$lfs_data|>
          to_prop=prop,
          to_count=count)|>
   group_by(age_in_to_year)|>
+  arrange(noc_5)|>
   nest()|>
   rename(to=data)|>
   mutate(to=map(to, column_to_rownames, "noc_5"))
@@ -214,7 +144,7 @@ results$tbbl <- bind_cols(results$from_sorted, results$to_sorted)|>
          first_ten=list(skills$noc_coords),
          source_props=map2(first_ten, from, wpp_wrapper, "from_prop"),
          target_props=map2(first_ten, to, wpp_wrapper, "to_prop"),
-         props=map2(source_props, target_props, unbalanced_wrapper, p=1, C=skills$max_dist, output="all"), #default is distance^(p=2), big C no +/-
+         props=map2(source_props, target_props, unbalanced_wrapper, p=1, C=10*skills$mean_dist, output="all"), #default distance^(p=2), big C no +/- (balanced)
          props_teer=map(props, convert_to_teer),
          props_cost=map(props, "cost"),
          teer_alluvium_plot=pmap(list(props_teer, age_in_from_year, age_in_to_year, props_cost), alluvial_plot),
@@ -224,14 +154,18 @@ results$tbbl <- bind_cols(results$from_sorted, results$to_sorted)|>
          prop_base_plot=pmap(list(prop_long, props_cost, max_prop),  make_base_plot),
          source_counts=map2(first_ten, from, wpp_wrapper, "from_count"),
          target_counts=map2(first_ten, to, wpp_wrapper, "to_count"),
-         counts=map2(source_counts, target_counts, unbalanced_wrapper, p=1, C=skills$max_dist/2, output="all"),
+         counts=map2(source_counts, target_counts, unbalanced_wrapper, p=1, C=skills$mean_dist, output="all"),
          counts_cost=map(counts, "cost"), #set to NA_real_ to suppress in plots
          max_count= max_mass(counts),
          count_segments=map2(counts, mds_coords, make_segment_data),
          count_long=map(count_segments, make_long),
          count_base_plot=pmap(list(count_long, counts_cost, max_count), make_base_plot),
          aextra=map2(counts, movie_name, plot_extra, "aextra", "Deletions", "from_id"),
-         bextra=map2(counts, movie_name, plot_extra, "bextra", "Insertions", "to_id")
+         bextra=map2(counts, movie_name, plot_extra, "bextra", "Insertions", "to_id"),
+         hier=map2(from, to, hier_wrapper),
+         joined=map2(props, hier, join_transitions),
+         top=map(joined, get_top),
+         top_plot=map2(top, movie_name, top_plot)
          )
 
 results$tbbl|>
@@ -242,19 +176,10 @@ results$tbbl|>
   select(aextra, bextra)|>
   write_rds(here("out", "extras.rds"))
 
-
-animate_wrapper(results$tbbl$prop_base_plot, results$tbbl$movie_name, "props")
-animate_wrapper(results$tbbl$count_base_plot, results$tbbl$movie_name, "counts")
-
-
+results$tbbl|>
+  select(top_plot)|>
+  write_rds(here("out", "top_plot.rds"))
 
 
-
-
-
-
-
-
-
-
-
+#animate_wrapper(results$tbbl$prop_base_plot, results$tbbl$movie_name, "props")
+#animate_wrapper(results$tbbl$count_base_plot, results$tbbl$movie_name, "counts")

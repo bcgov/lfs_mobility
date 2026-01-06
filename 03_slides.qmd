@@ -1,24 +1,33 @@
 ---
-title: "Simulating Occupational Mobility with Optimal Transport Theory"
-author: Richard Martin
 format:
   revealjs:
+    css: styles.css
+    title-slide: false
     smaller: true
     slide-number: true
     scrollable: false
     theme: solarized
     margin: 0
+
 bibliography: references.bib
-slide-number: true
 incremental: true
 widescreen: true
 self-contained: true
+
 execute:
   warning: false
   message: false
   echo: false
   error: false
 ---
+
+## Simulating Occupational Mobility with Optimal Transport Theory
+
+Richard Martin,<br> Ministry of Post Secondary and Future Skills,<br> Government of British Columbia
+
+::: title-footer
+The views and opinions expressed in this presentation are those of the author and do not reflect the views or policies of the Government of British Columbia.
+:::
 
 ```{r, include=FALSE}
 library(tidyverse)
@@ -105,12 +114,15 @@ plot_transport <- function(flows, pts, title = "", curvature = 0.25, n = 100) {
     theme(legend.position = "none")
 }
 #read objects----------------------
+top_plot <- read_rds(here("out","top_plot.rds"))
 skills <- read_rds(here("out","skills.rds"))
 source_dest_plots<- read_rds(here("out","source_dest_plots.rds"))
 alluvium_plots <- read_rds(here("out", "alluvium_plots.rds"))
 extras <-  read_rds(here("out", "extras.rds"))
 greedy_vs_optimal <- read_rds(here("out","greedy_vs_optimal.rds"))
 ```
+
+------------------------------------------------------------------------
 
 ## Introduction
 
@@ -129,13 +141,14 @@ greedy_vs_optimal <- read_rds(here("out","greedy_vs_optimal.rds"))
 ::: noincremental
 -   If I asked you to find alternative occupations for these people, what would you do?
 -   My first thought was to look at empirical transitions out of these occupations.
--   One *could* ask Statistics Canada to link censuses to see where former forestry workers end up, but:
+-   My second thought was, "they will probably ask me to do this again with different sector".
+-   One *could* ask Statistics Canada to link 2016 & 2021 censuses, but:
     1.  Sample size would be $\approx \left(\frac{1}{4}\right)^2$ of workers.
     2.  Transition matrix for 5 digit NOCs has $512^2=262144$ cells: Suppression.
-    3.  Realistically we can only use a 5 year window between 2016 and 2021: perhaps not long enough to catch much mobility.
+    3.  Short window, likely not much mobility.
 :::
 
-## Optimal Transport Theory (OTT):
+## The rabbit hole:
 
 ::: {.column width="50%"}
 ```{r, out.width="100%"}
@@ -144,14 +157,14 @@ knitr::include_graphics(here("images","base.jpg"))
 :::
 
 ::: {.column width="50%"}
--   OTT allows us to simulate occupation changes.
--   Required inputs are initial mass, distance, and final mass.
+-   Optimal Transport Theory (OTT) allows us to simulate the occupation changes we can't observe.
+-   The only required inputs are initial mass, distance, and final mass.
 -   Mass: either *counts* or *proportions* by occupation (from Labour Force Survey).
 -   Distance: occupational differences in skills, abilities, knowledge and work activities (from ONET).
 :::
 
--   If we use proportions we must assume that death, retirement and net migration are independent of occupation.
--   Alternatively, if we use counts we can model these external flows, rather than assuming independence.
+-   If proportions must assume that death, retirement and net migration are independent of occupation.
+-   If counts we can model these external flows, rather than assuming independence.
 -   Proportions are easier, so lets start there.
 
 ## Changes in Occupation Proportions
@@ -206,13 +219,12 @@ print(source_dest_plots$plot[[4]])
 
 ## Earth mover's problem:
 
-::: {.column width="35%"}
+:::: {.column width="35%"}
+-   Suppose you initially have 4 piles of dirt of sizes 1,2,3, and 4.
+-   What you want is 4 equal piles of dirt (2.5 each).
+-   $Cost=\sum mass\times distance$
 
--  Suppose you initially have 4 piles of dirt of sizes 1,2,3, and 4.
--  What you want is 4 equal piles of dirt (2.5 each).
--  $Cost=\sum mass\times distance$
-
-::: {.fragment}
+::: fragment
 ```{r}
 # locations
 pts <- tibble(
@@ -228,15 +240,13 @@ kable(pts, format = "html") |>
   kable_styling(font_size = 14)
 ```
 :::
-:::
+::::
 
 ::: {.column width="10%"}
-
 :::
 
-::: {.column width="55%"}
-
-::: {.fragment}
+:::: {.column width="55%"}
+::: fragment
 ```{r, fig.width=5, fig.height=5}
 greedy_flows <- tibble(
   from = c("P4", "P4", "P3"),
@@ -263,68 +273,58 @@ ggplot() +
 
 ```
 :::
-:::
+::::
 
 ------------------------------------------------------------------------
 
 ## Greedy: Largest surplus to closest deficit.
 
 ::: {.column width="35%"}
+1)  Move 0.5 from P4(largest surplus) → P2(closest deficit) to fill P2: Cost=0.5×0.42=0.21
 
-1) Move 0.5 from P4(largest surplus) → P2(closest deficit) to fill P2: Cost=0.5×0.42=0.21
+2)  Move 1.0 from P4(largest surplus) → P1(2nd closest deficit): Cost=1.0×0.99=0.99
 
-2) Move 1.0 from P4(largest surplus) → P1(2nd closest deficit): Cost=1.0×0.99=0.99
+3)  Move 0.5 from P3(2nd largest surplus) → P1(last deficit): Cost=0.5×1.4=0.7
 
-3) Move 0.5 from P3(2nd largest surplus) → P1(last deficit): Cost=0.5×1.4=0.7
-
-- Total cost: 0.21+0.99+0.7=1.9
-
+-   Total cost: 0.21+0.99+0.7=1.9
 :::
 
 ::: {.column width="65%"}
-
 ```{r, fig.width=6, fig.height=6}
 plot_transport(greedy_flows, pts, "Greedy Transport Plan")
 ```
-
 :::
 
 ------------------------------------------------------------------------
 
 ## Optimal: P2 cheap destination for fragile surplus P3.
 
-::: {.column width="50%"}
+:::: {.column width="50%"}
+1)  Move 0.5 from P3→P2: Cost=0.5×0.01=0.005
+2)  Move 1.5 from P4→P1: Cost=1.5×0.99=1.49
 
-1) Move 0.5 from P3→P2: Cost=0.5×0.01=0.005
-2) Move 1.5 from P4→P1: Cost=1.5×0.99=1.49
-- Total cost: 0.0050+1.4848=1.495
+-   Total cost: 0.0050+1.4848=1.495
 
-::: {.fragment}
-
+::: fragment
 ```{r, fig.height=3.5, fig.width=5}
 greedy_vs_optimal
 ```
-
 :::
-
-:::
+::::
 
 ::: {.column width="50%"}
-
 ```{r, fig.width=6, fig.height=6}
 plot_transport(optimal_flows, pts, "Optimal Transport Plan")
 ```
-
 :::
 
 ------------------------------------------------------------------------
 
-
 ## How is this related to labour market?
 
 -   Rather than piles of dirt, consider `r nrow(skills[["onet_full"]])` "piles" of workers.
--   Specifically, consider the NOC proportions of those 15-24 in 2011: this corresponds to the size of the original "piles".
--   Likewise, the NOC proportions of those 25-34 in 2021 are the desired "piles".
+-   Specifically, consider the NOC proportions of those 15-24 in 2011-2014: this corresponds to the size of the original "piles".
+-   Likewise, the NOC proportions of those 25-34 in 2021-2024 are the desired "piles".
 -   There is an infinite number of ways to move workers to attain the desired piles.
 -   The optimal transport solution [@transport] finds the transport plan that minimizes the cost of occupational change, subject to the constraints imposed by the source and target proportions.
 
@@ -448,15 +448,15 @@ Your browser does not support the video tag. </video>
 
 ## TEER Summaries
 
-- 2nd digit of NOC code is the TEER level of occupation:
+-   2nd digit of NOC code is the TEER level of occupation:
 
-::: {.fragment}
+::: fragment
 | TEER | Description | Typical education / training |
-|------|-------------|------------------------------|
-| 0 | Management  | Management experience |
+|-----------------|-----------------|--------------------------------------|
+| 0 | Management | Management experience |
 | 1 | Professional | University degree |
 | 2 | Technical / skilled trades | College diploma (2–3 years) or apprenticeship (2–5 years) |
-| 3 | Intermediate occupations | College diploma (<2 years) or apprenticeship (<2 years) |
+| 3 | Intermediate occupations | College diploma (\<2 years) or apprenticeship (\<2 years) |
 | 4 | Labour / support occupations | High school diploma and/or several weeks–months of training |
 | 5 | Entry-level | Short-term training; no formal education required |
 :::
@@ -500,27 +500,32 @@ alluvium_plots$teer_alluvium_plot[[4]]
 
 ## Counts:
 
-- Everything to this point has been based on proportions: we have assumed a closed system where there are no external flows (balanced optimal transport).
-- Next we move on to counts, where the aggregate counts of workers differ between time periods.
-- For the younger age brackets the aggregate count increased: insertions are necessary (immigration)
-- In the eldest bracket the aggregate count decreased: deletions are necessary (from death, retirement or emigration).
+-   Everything to this point has been based on proportions: we have assumed a closed system where there are no external flows (balanced optimal transport).
+-   Next we move on to counts, where the aggregate counts of workers differ between time periods.
+-   For the younger age brackets the aggregate count increased: insertions are necessary (immigration)
+-   In the eldest bracket the aggregate count decreased: deletions are necessary (from death, retirement or emigration).
 
 ## Unbalanced Optimal Transport:
 
-- Allows for costly insertions and deletions: Cost is assumed to be half the maximal distance between occupations. 
-- Insertion of workers in underweight remote^[in skill space] destination occupations when aggregate count is increasing.
-- Deletion of workers from overweight remote^[in skill space] origin occupations when aggregate count decreasing.
-- Inter-occupational mobility is muted when compared to proportions: we do not need to move as many people internally when we can insert or delete from an external source. 
+-   Allows for costly insertions and deletions.\
+-   We set the penalty for mass creation/destruction equal to the maximum possible transport cost, ensuring that unmatched mass is used only to reconcile aggregate imbalances, not to avoid costly occupational transitions.
+-   Insertion of workers in underweight remote[^1] destination occupations when aggregate count increases.
+-   Deletion of workers from overweight remote[^2] origin occupations when aggregate count decreases.
+-   Inter-occupational mobility is muted when compared to proportions: we do not need to move as many people internally when we can insert or delete from an external source.
 
-## Counts: 15 to 24 years -\> 25 to 34 years                 
+[^1]: in skill space
 
-<video width="800" controls>                                  
+[^2]: in skill space
 
-<source src="out/counts/15-24 to 25-34.mp4" type="video/mp4"> 
+## Counts: 15 to 24 years -\> 25 to 34 years
 
-Your browser does not support the video tag. </video>         
+<video width="800" controls>
 
----------------------------------------------------------------
+<source src="out/counts/15-24 to 25-34.mp4" type="video/mp4">
+
+Your browser does not support the video tag. </video>
+
+------------------------------------------------------------------------
 
 ## Counts: 25 to 34 years -\> 35 to 44 years
 
@@ -554,79 +559,180 @@ Your browser does not support the video tag. </video>
 
 ## Insertions and Deletions
 
--  When modelling counts, the cohort size changes over time necessitating insertions (first 3 transitions) and deletions(last transition).
--  In the following slides we show the top 40 strictly positive insertions and deletions.
--  For the insertions we colour by whether the NOC is an immigration priority.
--  This priority list was produced using an AI-assisted synthesis of publicly available federal and provincial immigration program information up to mid 2025.
+-   When modelling counts, the cohort size changes over time necessitating insertions (first 3 transitions) and deletions(last transition).
+-   In the following slides we show the top 40 strictly positive insertions and deletions.
+-   For the insertions we colour by whether the NOC is an immigration priority.
+-   Chat-GPT curated this list based on IRCC priority categories (containing occupations) and PNP occupations, as of mid 2025.
 
+:::::: {.fragment .rap-box}
+::::: rap-box
+::: rap-bg
+:::
+::: rap-text
+Can’t trust this…Can’t trust this…
 
-## Insertions 15 to 24 years -\> 25 to 34 years  
+Big model talkin’, sounds so precise, Clean sentences, confidence nice, But check the source, slow down a bit— Fluent words don’t equal truth one bit.
+
+Stats look sharp, graphs look clean, But ask one follow-up, cracks appear in the sheen. Probabilities dressed up like fact, Pattern matchin’ in a confident act.
+
+Autocomplete with a PhD tone, Sometimes right, sometimes flying blind alone. Helpful tool? Yeah, absolutely— Oracle of truth? No guarantee.
+
+So read it twice, verify the claim, AI’s not lying, it’s just not the same As judgment, context, or grounded proof— It predicts text, not what is true.
+
+Can’t trust this… blindly, no Use your head, let the evidence show. Can’t trust this… on its own. Human in the loop keeps you from being thrown.
+:::
+:::::
+::::::
+
+------------------------------------------------------------------------
+
+## Insertions 15 to 24 years -\> 25 to 34 years
 
 ```{r}
 extras$bextra[[1]]
 ```
 
----------------------------------------------------------------------
+------------------------------------------------------------------------
 
-
-## Insertions 25 to 34 years -\> 35 to 44 years  
+## Insertions 25 to 34 years -\> 35 to 44 years
 
 ```{r}
 extras$bextra[[2]]
 ```
 
----------------------------------------------------------------------
+------------------------------------------------------------------------
 
-
-## Insertions 35 to 44 years -\> 45 to 54 years  
+## Insertions 35 to 44 years -\> 45 to 54 years
 
 ```{r}
 extras$bextra[[3]]
 ```
 
----------------------------------------------------------------------
+------------------------------------------------------------------------
 
-
-## Deletions 45 to 54 years -\> 55 to 64 years  
+## Deletions 45 to 54 years -\> 55 to 64 years
 
 ```{r}
 extras$aextra[[4]]
 ```
 
----------------------------------------------------------------------
+------------------------------------------------------------------------
 
-## Nearest neighbour for Logging machinery operators
+## Hierarchical Distance:
 
-```{r}
-skills[["skills_noc_dist"]]|>
-  as.data.frame()|>
-  rownames_to_column("origin")|>
-  pivot_longer(cols=-origin, names_to = "destination", values_to = "distance")|>
-  filter(origin!=destination,
-         str_detect(origin,"Logging machinery operators"))|>
-  slice_min(distance, n=10)|>
-  kableExtra::kable(format = "html") |>
-  kableExtra::kable_styling(font_size = 14)
+-   Optimal transport depends crucially on how we estimate distance between occupations.
+-   Skill-based distances capture the technological and human-capital feasibility of worker reallocation: occupations that require similar skills are, in principle, easier to transition between.
+-   Nevertheless, labor-market transitions are also shaped by institutional and hierarchical features.
+-   Occupational classifications, credential requirements, career ladders, and wage structures impose discrete barriers and frictions.
+-   Comparing the results based on skill based vs. hierarchical distances serves as a robustness check, and allows us to identify where their predictions diverge.
+
+------------------------------------------------------------------------
+
+## NOC hierarchy:
+
+-   First digit — Broad occupational sector, which roughly corresponds to type of work or economic function. This is the strongest barrier in the hierarchy.
+-   Second digit — TEER category. This digit encodes Training, Education, Experience, and Responsibilities (TEER). TEER is a human capital / skill-depth ordering.
+-   First three digits — Major occupational group. Jobs share broad task domain and similar credential pathways.
+-   First four digits — Minor occupational group. Occupations are closely related.
+-   Five digits — Unit occupation. This is the most granular level: Jobs sharing the same 5 digit NOC code are considered the same occupation.
+
+------------------------------------------------------------------------
+
+## From Hierarchy to Distance:
+
+1)  If NOCs share all five digits, distance is 0.
+2)  Else if NOCs share the first 4 digits, distance is 1.
+3)  Else if NOCs share the first 3 digits, distance is 2.
+4)  Else if NOCs share the first digit, distance is 3 + \|$\Delta$TEER\|
+5)  Else distance is 9.
+
+------------------------------------------------------------------------
+
+## Hierarchical Distance Counts
+
+-   There are only 10 possible distances, of which 88% are 9.
+-   Without modification this would lead to degenerate solutions.
+
+```{r, fig.height=4}
+plotly::ggplotly(read_rds(here("out","h_counts.rds")))
 ```
 
 ------------------------------------------------------------------------
 
-## Optimal Transport for Logging machinery operators
+## Wage Distributions:
 
-```{r}
-skills[["skills_noc_dist"]]|>
-  as.data.frame()|>
-  rownames_to_column("origin")|>
-  pivot_longer(cols=-origin, names_to = "destination", values_to = "distance")|>
-  filter(str_detect(origin,"Logging machinery operators"),
-         str_detect(destination, "Longshore")
-         )|>
-  kableExtra::kable(format = "html") |>
-  kableExtra::kable_styling(font_size = 14)
+-   We make use of [wage data](https://open.canada.ca/data/en/dataset/adad580f-76b0-4502-bd05-20c125de9116/resource/9da94d63-b178-4a64-aeb3-b6a3bd721ad2) to perturb the hierarchical distances.\
+-   Specifically, we use a 3 dimensional summary of the wage distribution for each NOC:
+
+1)  $log10(p50)$ as a measure of central tendency,
+2)  $log10(p90)-log10(p10)$ as a measure of dispersion, and
+3)  $[log10(p90)-log10(p50)]-[log10(p50)-log10(p10)]$ as a measure of skewness.
+
+-   These 3 measures are scaled to have mean zero and unit variance, placing them on equal footing in the construction of wage-based distances.
+-   Next we compute pairwise distances between occupations in this three-dimensional space.
+-   The resulting wage distances are subsequently rescaled to lie in the interval \[0,1\].
+
+------------------------------------------------------------------------
+
+## Wage distribution summary stats (unscaled):
+
+```{r, fig.height=6}
+read_rds(here("out", "wage_plot.rds"))
 ```
 
-- Kind of underwhelming? 
-- File Optimal Transport Theory under "kind of cool, but ultimately useless for this application".
+------------------------------------------------------------------------
+
+## The Hierarchical Distance Matrix:
+
+```{r, fig.height=6}
+read_rds(here("out", "h_dist_heat.rds"))
+```
+
+------------------------------------------------------------------------
+
+## Top transfers: skill vs hierarchical distance
+
+```{r}
+top_plot[[1]][[1]]
+```
+
+------------------------------------------------------------------------
+
+## Top transfers: skill vs hierarchical distance
+
+```{r}
+top_plot[[1]][[2]]
+```
+
+------------------------------------------------------------------------
+
+## Top transfers: skill vs hierarchical distance
+
+```{r}
+top_plot[[1]][[3]]
+```
+
+------------------------------------------------------------------------
+
+## Top transfers: skill vs hierarchical distance
+
+```{r}
+top_plot[[1]][[4]]
+```
+
+------------------------------------------------------------------------
+
+## Future work...
+
+-   In Denmark one can use un-suppressed administrative data to study occupational mobility: only the final output is subject to suppression.\
+-   The plan is to:
+
+1)  Create occupation transition matrices.
+2)  Collapse occupation transition matrices to their marginals (source occupation, destination occupation).
+3)  Use these marginals, a distance matrix, and optimal transport to create theoretical transition matrices.
+4)  Test whether skill distance or hierarchical distance does a better job of predicting observed occupational mobility.
+
+------------------------------------------------------------------------
 
 ## References
 

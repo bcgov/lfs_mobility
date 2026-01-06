@@ -163,6 +163,32 @@ animate_wrapper <- function(plots, names, folder){
   )
 }
 
+
+#' Wrapper for weighted pairwise potentials with ID preservation
+#'
+#' Computes weighted pairwise potentials using wpp() after
+#' removing zero-mass observations, and re-attaches the original
+#' row identifiers to the result.
+#'
+#' @param coords A numeric matrix or data frame of coordinates.
+#'   Rows correspond to units; columns to dimensions.
+#' @param mass A data frame or tibble containing mass variables.
+#'   Row names must align with \code{coords}.
+#' @param var A single character string giving the column name in
+#'   \code{mass} to be used as weights.
+#'
+#' @details
+#' Observations with non-positive mass are excluded prior to calling
+#' wpp(), as required by the underlying algorithm. The output
+#' is augmented with original_id, preserving the row names of
+#' the retained observations from mass.
+#'
+#' @return
+#' An object returned by wpp(), with an additional column
+#' original_id identifying the original rows used in the
+#' computation.
+#'
+#' @seealso wpp
 wpp_wrapper <- function(coords, mass, var){
   ids <- row.names(mass)
   mass <- mass[[var]]
@@ -179,7 +205,7 @@ unbalanced_wrapper <- function(from, to, ...) {
   to_ids   <- to$original_id
   plan$from_id <- from_ids[plan$from]
   plan$to_id   <- to_ids[plan$to]
-  plan <- plan[, c("from", "from_id", "to", "to_id", "mass")]
+  plan <- plan[, c("from_id", "to_id", "mass")]
   aextra <- data.frame(
     from = seq_along(res$aextra),
     from_id = from_ids,
@@ -198,13 +224,25 @@ unbalanced_wrapper <- function(from, to, ...) {
   )
 }
 
+hier_wrapper <- function(from, to){
+  a <- setNames(from$from_prop, rownames(from))
+  b <- setNames(to$to_prop, rownames(to))
+  costm <- alternative_distance[names(a), names(b), drop = FALSE]
+  sol <- transport::transport(a, b, costm)
+  transform(
+    sol,
+    from_id = names(a)[from],
+    to_id   = names(b)[to]
+  )[, c("from_id", "to_id", "mass")]
+}
+
+
 make_segment_data <- function(transitions, coordinates){
   transitions$plan|>
     left_join(coordinates, by = c("from_id" = "noc_2021")) %>%
     rename(x_from = V1, y_from = V2) %>%
     left_join(coordinates, by = c("to_id" = "noc_2021")) %>%
-    rename(x_to = V1, y_to = V2)|>
-    select(-from, -to)
+    rename(x_to = V1, y_to = V2)
 }
 
 make_long <- function(tbbl){
@@ -255,7 +293,6 @@ plot_extra <- function(lst, movie_name, component, xlab, join_var){
     filter(extra_mass>0)|>
     slice_max(extra_mass, n=40)|>
     left_join(priority)
-
   if(join_var=="from_id"){
     plt <- ggplot(tbbl, aes(extra_mass, fct_reorder(noc_plus_title, extra_mass)))
   }else{
@@ -271,10 +308,69 @@ plot_extra <- function(lst, movie_name, component, xlab, join_var){
          fill="Immigration")
 }
 
+join_transitions <- function(props, hier){
 
+  skill_transitions <- props[["plan"]]|>
+    filter(from_id!=to_id)|>
+    arrange(desc(mass))|>
+    rename(`Based on skill`=mass)
 
+  hier_transtitions <- hier|>
+    filter(from_id!=to_id)|>
+    arrange(desc(mass))|>
+    rename(`Based on hierarchy`=mass)
 
+  full_join(skill_transitions, hier_transtitions)|>
+    left_join(skills[["nocs_we_want"]], by=c("from_id"="noc_2021"))|>
+    mutate(from=str_trunc(noc_plus_title, width=50))|>
+    select(-noc_plus_title)|>
+    left_join(skills[["nocs_we_want"]], by=c("to_id"="noc_2021"))|>
+    mutate(to=str_trunc(noc_plus_title, width=50))|>
+    select(-noc_plus_title)|>
+    unite(label, from, to, sep = "->")
+}
 
+get_top <- function(joined){
 
+  top_both <- joined|>
+    na.omit()|>
+    select(-from_id, -to_id)|>
+    mutate(mass_sum=`Based on hierarchy`+`Based on skill`)|>
+    slice_max(mass_sum, n=10)|>
+    select(-mass_sum)|>
+    pivot_longer(cols=-label)|>
+    mutate(facet="Both")
+
+  top_hier <- joined|>
+    slice_max(`Based on hierarchy`,  n=10)|>
+    select(`Based on hierarchy`, label)|>
+    pivot_longer(cols=-label)|>
+    mutate(facet="Hierarchy Distance")
+
+  top_skill <- joined|>
+    slice_max(`Based on skill`,  n=10)|>
+    select(`Based on skill`, label)|>
+    pivot_longer(cols=-label)|>
+    mutate(facet="Skill Distance")
+
+  bind_rows(top_both, top_skill, top_hier)
+}
+
+top_plot <- function(top, title){
+
+  top|>
+    ggplot(aes(value,
+               tidytext::reorder_within(label, value, facet),
+               fill=name))+
+    geom_col(position = "dodge")+
+    scale_x_continuous(labels=scales::percent, limits = c(0, .02))+
+    labs(x="Mass Transfer",
+         y=NULL,
+         fill=NULL,
+         subtitle=paste("Hierarchical vs Skill: Top transfers", title))+
+    theme(legend.position = "bottom")+
+    facet_wrap(~facet, ncol=1, scales="free_y")+
+    tidytext::scale_y_reordered()
+}
 
 
