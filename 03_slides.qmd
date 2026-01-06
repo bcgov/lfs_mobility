@@ -559,32 +559,60 @@ Your browser does not support the video tag. </video>
 
 ## Insertions and Deletions
 
--   When modelling counts, the cohort size changes over time necessitating insertions (first 3 transitions) and deletions(last transition).
--   In the following slides we show the top 40 strictly positive insertions and deletions.
--   For the insertions we colour by whether the NOC is an immigration priority.
--   Chat-GPT curated this list based on IRCC priority categories (containing occupations) and PNP occupations, as of mid 2025.
+::: {.columns}
 
-:::::: {.fragment .rap-box}
-::::: rap-box
-::: rap-bg
+::: {.column width="40%"}
+
+- When modelling counts, the cohort size changes over time necessitating insertions (first 3 transitions) and deletions (last transition).
+- In the following slides we show the top 40 strictly positive insertions and deletions.
+- For the insertions we colour by whether the NOC is a Canadian immigration priority, according to Chat-GPT.
+- I also asked Chat-GPT to write a disclaimer:
+
 :::
-::: rap-text
-Can’t trust this…Can’t trust this…
 
-Big model talkin’, sounds so precise, Clean sentences, confidence nice, But check the source, slow down a bit— Fluent words don’t equal truth one bit.
+::: {.column width="60%"}
 
-Stats look sharp, graphs look clean, But ask one follow-up, cracks appear in the sheen. Probabilities dressed up like fact, Pattern matchin’ in a confident act.
-
-Autocomplete with a PhD tone, Sometimes right, sometimes flying blind alone. Helpful tool? Yeah, absolutely— Oracle of truth? No guarantee.
-
-So read it twice, verify the claim, AI’s not lying, it’s just not the same As judgment, context, or grounded proof— It predicts text, not what is true.
-
-Can’t trust this… blindly, no Use your head, let the evidence show. Can’t trust this… on its own. Human in the loop keeps you from being thrown.
+::: {.fragment .rap-box}
+::: {.rap-bg}
 :::
-:::::
-::::::
 
-------------------------------------------------------------------------
+::: {.rap-text}
+Can’t trust this… Can’t trust this…<br>
+
+Big model talkin’, sounds so precise,<br> 
+Clean sentences, confidence nice,<br> 
+But check the source, slow down a bit— <br>
+Fluent words don’t equal truth one bit.<br>
+
+Stats look sharp, graphs look clean,<br>
+But ask one follow-up, cracks appear in the sheen.<br> 
+Probabilities dressed up like fact,<br> 
+Pattern matchin’ in a confident act.<br>
+
+Autocomplete with a PhD tone,<br> 
+Sometimes right, sometimes flying blind alone. <br>
+Helpful tool? Yeah, absolutely— <br>
+Oracle of truth? No guarantee.<br>
+
+So read it twice, verify the claim,<br> 
+AI’s not lying, it’s just not the same<br>
+as judgment, context, or grounded proof— <br>
+It predicts text, not what is truth.<br>
+
+Can’t trust this… <br>
+blindly, no use your head, for evidence shown.<br> 
+Can’t trust this… on its own.<br> 
+Hammer in the loop keeps you from being thrown.<br>
+:::
+
+:::
+
+:::
+
+:::
+
+
+--------------------------------------------------------------------------
 
 ## Insertions 15 to 24 years -\> 25 to 34 years
 
