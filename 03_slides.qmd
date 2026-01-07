@@ -592,7 +592,7 @@ Pattern matchin’ in a confident act.<br>
 Autocomplete with a PhD tone,<br> 
 Sometimes right, sometimes flying blind alone. <br>
 Helpful tool? Yeah, absolutely— <br>
-Oracle of truth? No guarantee.<br>
+Source of truth? No guarantee.<br>
 
 So read it twice, verify the claim,<br> 
 AI’s not lying, it’s just not the same<br>
@@ -659,7 +659,7 @@ extras$aextra[[4]]
 ## NOC hierarchy:
 
 -   First digit — Broad occupational sector, which roughly corresponds to type of work or economic function. This is the strongest barrier in the hierarchy.
--   Second digit — TEER category. This digit encodes Training, Education, Experience, and Responsibilities (TEER). TEER is a human capital / skill-depth ordering.
+-   Second digit — TEER category. This digit encodes Training, Education, Experience, and Responsibilities: a human capital / skill-depth ordering.
 -   First three digits — Major occupational group. Jobs share broad task domain and similar credential pathways.
 -   First four digits — Minor occupational group. Occupations are closely related.
 -   Five digits — Unit occupation. This is the most granular level: Jobs sharing the same 5 digit NOC code are considered the same occupation.
